@@ -14,6 +14,8 @@
 #include <iostream>
 #include <limits>
 #include <sstream>
+#include <stdexcept>
+#include <limits>
 
 // Athena++ headers
 #include "../athena.hpp"

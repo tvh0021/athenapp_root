@@ -1,0 +1,22 @@
+#!/bin/bash
+#SBATCH -J vsf_0.7
+#SBATCH --output=%J.out
+#SBATCH --error=%J.err
+#SBATCH -t 4:00:00
+#SBATCH --nodes 1
+#SBATCH --ntasks-per-node=128
+#SBATCH --mail-type=ALL --mail-user=tha@flatironinstitute.org
+#SBATCH -p cca
+
+#SBATCH --constraint rome
+
+# activate threading
+# export OMP_NUM_THREADS=1
+export PYTHONDONTWRITEBYTECODE=true
+# export HDF5_USE_FILE_LOCKING=FALSE
+
+# module purge
+module load hdf5
+source /mnt/home/tha10/venv-python/vscode/bin/activate
+
+python vsf_simulation.py
