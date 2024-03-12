@@ -387,10 +387,10 @@ void Mesh::InitUserMeshData(ParameterInput *pin)
 
     if (newGridFlag)
     {
-        newOuterBoundary = pin->GetOrAddReal("restart", "boundary", 3.e-4);   // new start of refinement radius in Mpc
-        numberOfStepsToReachNewSink = 0;                                      // pin->GetOrAddInteger("restart", "n_step", 1000); // number of time steps to reach the new sink radius
-        timeToReachNewSink = pin->GetOrAddInteger("restart", "t_step", 1e-4); // amount of time to reach the new sink radius in Myr, 1e-4 is roughly equal to the free fall time at 1pc
-        newInnerRadius = pin->GetOrAddReal("restart", "r_in_new", 1.e-7);     // final inner radius of the meso-scale simulation in Mpc; M87 has rg = 140 AU or ~6e-4 pc. At 0.1 pc inner radius, this corresponds to ~200 rg's.
+        newOuterBoundary = pin->GetOrAddReal("restart", "boundary", 3.e-4); // new start of refinement radius in Mpc
+        numberOfStepsToReachNewSink = 0;                                    // pin->GetOrAddInteger("restart", "n_step", 1000); // number of time steps to reach the new sink radius
+        timeToReachNewSink = pin->GetOrAddReal("restart", "t_step", 1e-4);  // amount of time to reach the new sink radius in Myr, 1e-4 is roughly equal to the free fall time at 1pc
+        newInnerRadius = pin->GetOrAddReal("restart", "r_in_new", 1.e-7);   // final inner radius of the meso-scale simulation in Mpc; M87 has rg = 140 AU or ~6e-4 pc. At 0.1 pc inner radius, this corresponds to ~200 rg's.
         // d_innerRadius = (innerRadius - newInnerRadius) / numberOfStepsToReachNewSink;  // change in inner radius per time step
         d_innerRadius = (innerRadius - newInnerRadius) / timeToReachNewSink; // change in inner radius per unit time
         smallestCellWidth = simulationBoxWidth / numberOfZones / pow(2., numberOfRefinementLevels - 1);
@@ -491,7 +491,8 @@ void Mesh::InitUserMeshData(ParameterInput *pin)
             std::cout << "----NEW GRID----"
                       << "\n";
             std::cout << "New inner radius = " << newInnerRadius * 1.e6 << " pc \n";
-            std::cout << "Outer refined radius = " << newOuterBoundary * 1.e6 << " pc \n";
+            std::cout << "Time over which inner region shrinks = " << timeToReachNewSink * 1.e3 << " kyr \n";
+            // std::cout << "Outer refined radius = " << newOuterBoundary * 1.e6 << " pc \n";
             std::cout << "Outer domain radius = " << outerRadius * 1.e3 << " kpc \n";
             std::cout << "Expected mass of the inner region = " << pow(newInnerRadius, 3.) * densityVacuumSinkAstronomical * PI * 4. / 3. << " Msun \n";
             std::cout << "\n";
@@ -796,7 +797,7 @@ void MeshBlock::ProblemGenerator(ParameterInput *pin)
 
                         if (pmy_mesh->iuser_mesh_data[0](0) % 1000000 == 0)
                         {
-                            std::cout << "seed = " << pmy_mesh->iuser_mesh_data[0](0) << ", velocity perturbation = " << randomVelocityPerturbationAstronomical / kms_Astronomical << " km s^-1, phi = " << randomPhiRad << ", theta = " << randomThetaRad << "\n";
+                            std::cout << "seed = " << pmy_mesh->iuser_mesh_data[0](0) << ", velocity perturbation = " << randomVelocityPerturbationAstronomical / kms_Astronomical << "\n";
                         }
 
                         Real velocityPerturbationX = randomVelocityPerturbationAstronomical * randomXFraction;
@@ -1041,20 +1042,18 @@ void Mesh::UserWorkInLoop()
 
         if (currentInnerRadius > newInnerRadius)
         {
-            currentInnerRadius -= d_innerRadius * dt;
+            currentInnerRadius -= d_innerRadius * (dt * codeTime);
             numberOfStepsToReachNewSink += 1;
             if (numberOfStepsToReachNewSink % 100 == 0)
             {
-                std::cout << "Shrink step : " << ncycle << "; inner radius = " << currentInnerRadius * 1.e9 << " mpc \n";
-                std::cout << "dt = " << dt << "\n";
+                std::cout << "Shrink step : " << ncycle - zoomInStep << "; inner radius = " << currentInnerRadius * 1.e9 << " mpc \n";
+                std::cout << "dt = " << dt * codeTime * 1.e6 << " yr \n";
             }
-                }
-        else
-        {
-            currentInnerRadius = newInnerRadius;
-            // afterGridReconstruction = true; // after changing the inner region, flip this flag to start refining the grid
         }
-        // currentInnerRadius = newInnerRadius;
+        else
+        { // maybe we don't need this else statement
+            currentInnerRadius = newInnerRadius;
+        }
     }
 }
 
@@ -1459,7 +1458,7 @@ static Real dN_dX(const Real dimensionlessX, const Real numberDensity)
     return (2 * pow(numberDensity, 2 - gammaAdiabatic) * scaledRadius * gravitationalAcceleration(dimensionlessX * scaledRadius) * conversionNtoRho / scaledEntropyAstronomical - numberDensity * pow(dimensionlessX, etaPower - 1) * etaPower) / ((1 + pow(dimensionlessX, etaPower)) * gammaAdiabatic);
 }
 
-// KR4 differentiator
+// RK4 differentiator
 static Real rungeKutta4(Real x0, Real y0, Real xn, int n, Real (*differentialFunction)(Real, Real))
 { // (x0,y0) are initial conditions, xn is the final value of x, n is the number of iterations, and differentialFunction is the dy/dx expression
     Real k1, k2, k3, k4;
@@ -1565,7 +1564,7 @@ static Real emissivityFromTemperature(Real temperature)
     Real emissivityCGS, emissivityAstronomical;
     Real logTemperature = log10(temperature);
 
-    // Modified 08/02/2023: interpolate all datapoints instead of if-else clause to speed up computation
+    // Modified 08/02/2023: interpolate all data points instead of if-else clause to speed up computation
     emissivityCGS = pow(10., simpleInterpolate(logTemperature, logTemperatureArray, logEmissivityHydroArray));
 
     emissivityAstronomical = emissivityCGS / (solarMassCGS * pow(MpcCGS, 5) * pow(MyrCGS, -3));
