@@ -111,6 +111,7 @@ static Real simpleInterpolate(Real inputX, std::vector<Real> tabulatedX, std::ve
 void enforceFloors(MeshBlock *pmb, AthenaArray<Real> &cons, int k, int j, int i);
 static Real coolingTime(AthenaArray<Real> &w, int k, int j, int i);
 static Real soundCrossingTime(AthenaArray<Real> &w, int k, int j, int i, Real cellWidth);
+static Real computeKineticEnergyDensityCode(AthenaArray<Real> &cons, int k, int j, int i);
 
 void coolingSourceFunction(const Real dt, const AthenaArray<Real> &prim,
                            AthenaArray<Real> &cons, int k, int j, int i);
@@ -1281,7 +1282,7 @@ void innerRadialBoundary(MeshBlock *pmb, const AthenaArray<Real> &prim,
 
         // Added 06/23/2023: calculate current temperature of cell to determine if accretion is hot or cold
         Real conservedNumberDensityCode = cons(IDN, k, j, i) / (conversionNtoRho / codeMass);
-        Real kineticEnergyDensityCode = 0.5 * (SQR(cons(IM1, k, j, i)) + SQR(cons(IM2, k, j, i)) + SQR(cons(IM3, k, j, i))) / cons(IDN, k, j, i); // unit: mass / length / time^2 (checked)
+        Real kineticEnergyDensityCode = computeKineticEnergyDensityCode(cons, k, j, i); // unit: mass / length / time^2 (checked)
         Real thermalEnergyDensityCode = cons(IEN, k, j, i) - kineticEnergyDensityCode;
         Real conservedTemperatureCode = gammaMinus1 * thermalEnergyDensityCode / (conservedNumberDensityCode * codeBoltzmannConst);
 
@@ -1608,7 +1609,7 @@ void jetFeedbackSourceFunction(MeshBlock *pmb, AthenaArray<Real> &cons, const At
         profileWeight = 4.152 * exp(-0.5 * SQR(polarDistance / jetSmoothingRadiusCode)); // the factor 4.152 is numerically calculated to ensure total mass of the jet base equal to accreted mass, will differs for different smoothing factor
 
         // Added 06/17/2023: rewrote again to be consistent with Li & Bryan (2014)
-        Real cellKineticEnergyDensityCode = 0.5 * (SQR(cons(IM1, k, j, i)) + SQR(cons(IM2, k, j, i)) + SQR(cons(IM3, k, j, i))) / cons(IDN, k, j, i); // KE = p^2 / 2 rho
+        Real cellKineticEnergyDensityCode = computeKineticEnergyDensityCode(cons, k, j, i); // KE = p^2 / 2 rho
         Real cellThermalEnergyDensityCode = cons(IEN, k, j, i) - cellKineticEnergyDensityCode;
 
         // Added 07/04/2023: jet precession
@@ -1627,7 +1628,7 @@ void jetFeedbackSourceFunction(MeshBlock *pmb, AthenaArray<Real> &cons, const At
         Real jetKineticEnergyDensityCode = 0.5 * jetDensityCode * SQR(jetVelocityAstronomical / codeVelocity); // KE = 1/2 rho v^2
         Real jetThermalEnergyDensityCode = (1. - jetKineticFraction) / jetKineticFraction * jetKineticEnergyDensityCode;
 
-        Real updatedKineticEnergyDensityCode = 0.5 * (SQR(cons(IM1, k, j, i)) + SQR(cons(IM2, k, j, i)) + SQR(cons(IM3, k, j, i))) / cons(IDN, k, j, i); // KE = p^2 / 2 rho
+        Real updatedKineticEnergyDensityCode = computeKineticEnergyDensityCode(cons, k, j, i); // KE = p^2 / 2 rho
         Real updatedThermalEnergyDensityCode = cellThermalEnergyDensityCode + jetThermalEnergyDensityCode;
 
         cons(IEN, k, j, i) = updatedKineticEnergyDensityCode + updatedThermalEnergyDensityCode; // update energy
@@ -1642,7 +1643,7 @@ void jetFeedbackSourceFunction(MeshBlock *pmb, AthenaArray<Real> &cons, const At
         profileWeight = 4.152 * exp(-0.5 * SQR(polarDistance / jetSmoothingRadiusCode)); // the factor 4.152 is numerically calculated to ensure total mass of the jet base equal to accreted mass, will differs for different smoothing factor
 
         // Added 06/17/2023: rewrote again to be consistent with Li & Bryan (2014)
-        Real cellKineticEnergyDensityCode = 0.5 * (SQR(cons(IM1, k, j, i)) + SQR(cons(IM2, k, j, i)) + SQR(cons(IM3, k, j, i))) / cons(IDN, k, j, i); // KE = p^2 / 2 rho
+        Real cellKineticEnergyDensityCode = computeKineticEnergyDensityCode(cons, k, j, i); // KE = p^2 / 2 rho
         Real cellThermalEnergyDensityCode = cons(IEN, k, j, i) - cellKineticEnergyDensityCode;
 
         // Added 07/04/2023: jet precession
@@ -1661,7 +1662,7 @@ void jetFeedbackSourceFunction(MeshBlock *pmb, AthenaArray<Real> &cons, const At
         Real jetKineticEnergyDensityCode = 0.5 * jetDensityCode * SQR(jetVelocityAstronomical / codeVelocity); // KE = 1/2 rho v^2
         Real jetThermalEnergyDensityCode = (1. - jetKineticFraction) / jetKineticFraction * jetKineticEnergyDensityCode;
 
-        Real updatedKineticEnergyDensityCode = 0.5 * (SQR(cons(IM1, k, j, i)) + SQR(cons(IM2, k, j, i)) + SQR(cons(IM3, k, j, i))) / cons(IDN, k, j, i); // KE = p^2 / 2 rho
+        Real updatedKineticEnergyDensityCode = computeKineticEnergyDensityCode(cons, k, j, i); // KE = p^2 / 2 rho
         Real updatedThermalEnergyDensityCode = cellThermalEnergyDensityCode + jetThermalEnergyDensityCode;
 
         cons(IEN, k, j, i) = updatedKineticEnergyDensityCode + updatedThermalEnergyDensityCode; // update energy
@@ -1752,7 +1753,7 @@ void enforceFloors(MeshBlock *pmb, AthenaArray<Real> &cons, int k, int j, int i)
 
     // Added 11/23/2023: enforce temperature floor correctly by fixing velocity and density
 
-    Real kineticEnergyDensityCode = 0.5 * (SQR(cons(IM1, k, j, i)) + SQR(cons(IM2, k, j, i)) + SQR(cons(IM3, k, j, i))) / cons(IDN, k, j, i);
+    Real kineticEnergyDensityCode = computeKineticEnergyDensityCode(cons, k, j, i);
     Real temperatureCode = gammaMinus1 * (cons(IEN, k, j, i) - kineticEnergyDensityCode) / (numberDensityCode * codeBoltzmannConst);
 
     if (temperatureCode < temperatureFloor / codeTemperature)
@@ -1782,6 +1783,15 @@ static Real soundCrossingTime(AthenaArray<Real> &w, int k, int j, int i, Real ce
 { // function is delta_x / c_s, where c_s = sqrt(gamma * P / rho), return code units
     Real soundSpeedCode = sqrt(gammaAdiabatic * w(IPR, k, j, i) / w(IDN, k, j, i));
     return cellWidth / soundSpeedCode;
+}
+
+/*
+Consolidate the kinetic energy density calculation
+*/
+
+static Real computeKineticEnergyDensityCode(AthenaArray<Real> &cons, int k, int j, int i)
+{
+    return 0.5 * (SQR(cons(IM1, k, j, i)) + SQR(cons(IM2, k, j, i)) + SQR(cons(IM3, k, j, i))) / cons(IDN, k, j, i);
 }
 
 // END MISC. FUNCTIONS-----------------------------------------------------------------------------
