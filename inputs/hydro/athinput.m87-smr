@@ -1,0 +1,105 @@
+<comment>
+problem    = Galaxy cluster based on Virgo
+configure  = ./configure.py --prob=m87_jetclean -mpi -hdf5 -h5double --cxx=clang++ --cflag="-march=znver2" OR ./configure.py --prob=m87_jetclean -mpi -hdf5 -h5double --cxx=icpc --mpiccmd="icpc -lmpi" --cflag="-xCORE-AVX512"
+comment    = Test run with 10 levels of SMR on FI Rusty
+
+<job>
+problem_id = M87  # problem ID: basename of output filenames
+res_flag   = 1
+zoom_flag  = 0
+
+<output1>
+file_type  = hst
+dt         = 0.05
+variable   = prim
+
+<output2>
+file_type  = hdf5      # HDF5 data dump
+variable   = prim      # variables to be output
+dt         = 0.1       # time increment between outputs
+xdmf       = 0         # no xdmf output
+
+<output3>
+file_type  = rst
+dt         = 1.
+
+<time>
+cfl_number = 0.3       # The Courant, Friedrichs, & Lewy (CFL) Number
+nlim       = -1   # cycle limit
+tlim       = 1.      # time limit
+integrator = rk2      # time integration algorithm
+xorder     = 2        # order of spatial reconstruction
+ncycle_out = 1000     # interval for stdout summary info
+dt_diagnostics = -1      # interval (in STS stages) for stdout extra dt info
+
+<mesh>
+nx1        = 128         # Number of zones in X1-direction
+x1min      = -1.0        # minimum value of X1
+x1max      = 1.0         # maximum value of X1
+ix1_bc     = user    # inner-X1 boundary flag
+ox1_bc     = user    # inner-X1 boundary flag
+
+nx2        = 128         # Number of zones in X2-direction
+x2min      = -1.0        # minimum value of X2
+x2max      = 1.0         # maximum value of X2
+ix2_bc     = user    # inner-X2 boundary flag
+ox2_bc     = user    # inner-X2 boundary flag
+
+nx3        = 128         # Number of zones in X3-direction
+x3min      = -1.0        # minimum value of X3
+x3max      = 1.0         # maximum value of X3
+ix3_bc     = user    # inner-X3 boundary flag
+ox3_bc     = user    # inner-X3 boundary flag
+refinement = adaptive
+numlevel   = 11      # root level plus n-1 levels refinement
+derefine_count = 2
+
+<meshblock>
+nx1       = 32
+nx2       = 32
+nx3       = 32
+
+<amr>
+time_on   = 5.e3     # AMR time delay
+
+<hydro>
+gamma     = 1.6666667    # gamma = C_p/C_v
+
+<conversion>
+box_width = 0.128     # width of the box in Mpc
+base_mass = 1.      # code mass in M_sun
+base_time = 10.    # code time in Myr
+base_temp = 1.      # code temperature in Kelvin
+
+<problem>
+t_floor   = 2.e5
+n_floor   = 1.e-3
+
+<accretion>
+max_temp  = 8.e5
+
+<boundary>
+r_in      = 5.e-6
+r_out     = 0.064
+
+<cooling>
+t_cool    = 0.
+
+<jet>
+t_jet     = 2.
+h_jet     = 1.2
+w_jet     = 1.
+m_upd     = 2.
+f_kin     = 1.
+v_jet     = 3.e3
+t_precess = 10.
+
+<turbulence>
+turb_type = 0
+turb_amp  = 0.03
+
+<restart>
+boundary  = 3.e-4
+r_in_new  = 2.e-7
+t_step    = 0.1
+

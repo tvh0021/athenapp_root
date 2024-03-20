@@ -1,0 +1,21 @@
+#!/bin/bash
+#SBATCH -J M87-trial
+#SBATCH --output=%J.out
+#SBATCH --error=%J.err
+#SBATCH -t 6:00:00
+#SBATCH --nodes 3
+#SBATCH --ntasks-per-node=36
+#SBATCH --mail-type=ALL --mail-user=tha@flatironinstitute.org
+#SBATCH -p cca
+
+#SBATCH --constraint skylake,opa
+
+# activate threading
+# export OMP_NUM_THREADS=1
+export PYTHONDONTWRITEBYTECODE=true
+# export HDF5_USE_FILE_LOCKING=FALSE
+
+# module purge
+module load hdf5 intel-oneapi-compilers/2023.1.0 gcc openmpi/4
+
+mpirun ~/git_repos/athenapp_root/bin/athena -i athinput.m87-smr -r M87.00000.rst -t 5:58:00
