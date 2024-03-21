@@ -64,6 +64,8 @@ time_on   = 5.e3     # AMR time delay
 
 <hydro>
 gamma     = 1.6666667    # gamma = C_p/C_v
+dfloor    = 3.841198e9
+pfloor    = 2.731714e5   # these values are heavily code-unit-dependent. If declared, DO NOT CHANGE <conversion>
 
 <conversion>
 box_width = 0.128     # width of the box in Mpc
