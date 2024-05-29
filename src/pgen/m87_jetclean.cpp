@@ -427,8 +427,8 @@ void Mesh::InitUserMeshData(ParameterInput *pin)
         it *= conversionNtoRho;
 
     // Boundary Conditions-----------------------------------------------------------------------
-    densityAtOuterBoundary = simpleInterpolate(outerRadius / scaledRadius, dimensionlessXArray, densityFuncOfXArray); // the density and pressure outside the outerRadius is fixed
-    pressureAtOuterBoundary = simpleInterpolate(outerRadius / scaledRadius, dimensionlessXArray, pressureFuncOfXArray);
+    densityAtOuterBoundary = interpolate1D(outerRadius / scaledRadius, dimensionlessXArray, densityFuncOfXArray); // the density and pressure outside the outerRadius is fixed
+    pressureAtOuterBoundary = interpolate1D(outerRadius / scaledRadius, dimensionlessXArray, pressureFuncOfXArray);
     if (mesh_bcs[BoundaryFace::inner_x1] == GetBoundaryFlag("user"))
     {
         EnrollUserBoundaryFunction(BoundaryFace::inner_x1, innerX1Boundary);
@@ -753,8 +753,8 @@ void MeshBlock::ProblemGenerator(ParameterInput *pin)
                 Real rAstronomical = r * codeLength;                // radial distance in Mpc
                 Real dimensionlessX = rAstronomical / scaledRadius; // a dimensionless x parameter, equals to r/r_0
 
-                Real interpolatedDensity = simpleInterpolate(dimensionlessX, dimensionlessXArray, densityFuncOfXArray);
-                Real interpolatedPressure = simpleInterpolate(dimensionlessX, dimensionlessXArray, pressureFuncOfXArray);
+                Real interpolatedDensity = interpolate1D(dimensionlessX, dimensionlessXArray, densityFuncOfXArray);
+                Real interpolatedPressure = interpolate1D(dimensionlessX, dimensionlessXArray, pressureFuncOfXArray);
 
                 if (r <= currentInnerRadius / codeLength) // inner region
                 {
@@ -1566,7 +1566,7 @@ static Real emissivityFromTemperature(Real temperature)
     Real logTemperature = log10(temperature);
 
     // Modified 08/02/2023: interpolate all data points instead of if-else clause to speed up computation
-    emissivityCGS = pow(10., simpleInterpolate(logTemperature, logTemperatureArray, logEmissivityHydroArray));
+    emissivityCGS = pow(10., interpolate1D(logTemperature, logTemperatureArray, logEmissivityHydroArray));
 
     emissivityAstronomical = emissivityCGS / (solarMassCGS * pow(MpcCGS, 5) * pow(MyrCGS, -3));
 
