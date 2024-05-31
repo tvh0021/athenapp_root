@@ -65,4 +65,4 @@ meshtest.dat
 doc/doxy*
 
 # jupyter notebook
-analysis/*.ipynb
+analysis/
