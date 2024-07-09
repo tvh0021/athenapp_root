@@ -1,5 +1,7 @@
 ## By Trung Ha, 2024
 ## This file is used to generate videos of the simulation data
+## Example command: python ~/git_repos/athenapp_root/analysis/get_plots.py --path "/scratch/08520/trungha/M87/galaxy-scale/product_f0.9_rf50Myr/" 
+## --base_ext "M87.out2." --snapshots 50 500 --window 0.5 5 50 --dimension 'x' 'z' --types 'temperature' 'number_density' --method 'slice'
 
 
 import yt
@@ -290,7 +292,6 @@ if __name__ == "__main__":
 
     path = args.path
     base_ext = args.base_ext
-    print(args.snapshots)
     (start_nfile, stop_nfile) = args.snapshots
     window = list(args.window)
     for i in range(len(window)):

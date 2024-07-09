@@ -106,7 +106,7 @@ static Real pressureFromEntropyAndNumberDensity(const Real entropy, const Real n
 static void tabulatedNumberDensitiesAndPressures();
 
 static void crossProduct(std::vector<Real> r, std::vector<Real> p, Real *x, Real *y, Real *z);
-static Real interpolate1D(Real inputX, std::vector<Real> tabulatedX, std::vector<Real> tabulatedY);
+static Real interpolate1D(const Real inputX, const std::vector<Real> &tabulatedX, const std::vector<Real> &tabulatedY);
 static Real simpleInterpolate(Real inputX, std::vector<Real> tabulatedX, std::vector<Real> tabulatedY);
 void enforceFloors(MeshBlock *pmb, AthenaArray<Real> &cons, int k, int j, int i);
 static Real coolingTime(AthenaArray<Real> &w, int k, int j, int i);
@@ -143,10 +143,10 @@ namespace
     Real outerRadius; // outer radius, used to force regions outside to hydrostatic equilibrium
     Real numberDensityFloorCGS, temperatureFloor, pressureFloorCGS, numberDensityVacuumSinkCGS;
     Real numberDensityFloorAstronomical, pressureFloorAstronomical, numberDensityVacuumSinkAstronomical, pressureVacuumSinkAstronomical, densityVacuumSinkAstronomical, densityFloorAstronomical;
-    Real haloMass, haloRadius;                  // dark-matter-halo-related parameters
-    Real stellarMass, stellarRadius;            // BCG-related parameters
-    Real scaledEntropy, etaPower, scaledRadius; // entropy-related parameters
-    Real SMBHMass;
+    Real haloMass, haloRadius;                             // dark-matter-halo-related parameters
+    Real stellarMass, stellarRadius;                       // BCG-related parameters
+    Real scaledEntropy, etaPower, scaledRadius;            // entropy-related parameters
+    Real SMBHMass, gravitationalRadius, scalingFactorMDot; // SMBH-related parameters
     Real scaledEntropyCGS, scaledEntropyAstronomical;
     Real initialNumberDensityCGS, initialNumberDensityAstronomical; // initial condition at x=1, used to solve hydrostatic equilibrium equation numerically
     Real densityAtOuterBoundary, pressureAtOuterBoundary;
@@ -261,6 +261,7 @@ namespace
     static Real codeGravitationalConst;
     static Real codeBoltzmannConst;
     static Real conversionNtoRho;
+    static Real conversionNtoRhoCode;
 
     // Some units to cgs
     const Real kpcCGS = 3.08567758096e+21;
@@ -323,9 +324,10 @@ void Mesh::InitUserMeshData(ParameterInput *pin)
     haloMass = pin->GetOrAddReal("problem", "M_DM", 3.e13);    // dark matter halo mass in M_sun
     haloRadius = pin->GetOrAddReal("problem", "r0_DM", 6.e-2); // halo scale radius in Mpc
 
-    stellarMass = pin->GetOrAddReal("problem", "M_star", 3.e11); // BCG stellar mass in M_sun
-    stellarRadius = pin->GetOrAddReal("problem", "r0_s", 2.e-3); // BCG stellar radius in Mpc
-    SMBHMass = pin->GetOrAddReal("problem", "M_SMBH", 6.5e9);    // SMBH mass in M_sun
+    stellarMass = pin->GetOrAddReal("problem", "M_star", 3.e11);                                        // BCG stellar mass in M_sun
+    stellarRadius = pin->GetOrAddReal("problem", "r0_s", 2.e-3);                                        // BCG stellar radius in Mpc
+    SMBHMass = pin->GetOrAddReal("problem", "M_SMBH", 6.5e9);                                           // SMBH mass in M_sun
+    gravitationalRadius = gravitationalConstAstronomical * SMBHMass / pow(cCGS / (MpcCGS / MyrCGS), 2); // gravitational radius in Mpc
 
     scaledEntropy = pin->GetOrAddReal("problem", "K0", 7.); // central entropy in keV cm^2
     scaledEntropyCGS = scaledEntropy * eV_CGS * 1.e3;
@@ -338,7 +340,8 @@ void Mesh::InitUserMeshData(ParameterInput *pin)
     innerRadius = pin->GetOrAddReal("boundary", "r_in", 3e-5);  // inner (smoothing) radius in Mpc
     outerRadius = pin->GetOrAddReal("boundary", "r_out", 0.18); // by default, set outer radius to 180 kpc, or slightly inside the box
 
-    accretionMaxTemperature = pin->GetOrAddReal("accretion", "max_temp", 1.e6); // set a maximum temperature that is considered to be accreted by the SMBH
+    scalingFactorMDot = 10. * sqrt(gravitationalRadius / innerRadius);          // scaling factor for accretion rate, assuming M_dot ~ r^1/2 beyond 100 rg
+    accretionMaxTemperature = pin->GetOrAddReal("accretion", "max_temp", 1.e6); // boundary between hot and cold accretion, in K
 
     coolingStartTime = pin->GetOrAddReal("cooling", "t_cool", 5.); // only start cooling after this much time has passed, in Myr
 
@@ -419,6 +422,7 @@ void Mesh::InitUserMeshData(ParameterInput *pin)
     codeGravitationalConst = gravitationalConstAstronomical / (pow(codeLength, 3.) / SQR(codeTime) / codeMass); // convert gravitational constant to code unit
     codeBoltzmannConst = boltzmannConstAstronomical / (codeEnergy / codeTemperature);                           // convert Boltzmann constant to code unit
     conversionNtoRho = mu * hydrogenMassAstronomical;                                                           // this conversion from number density to mass density is used frequently
+    conversionNtoRhoCode = conversionNtoRho / codeMass;                                                         // same as above, in code units
 
     // Initial conditions------------------------------------------------------------------------
     tabulatedNumberDensitiesAndPressures(); // generate a tabulated dataset of initial densities and pressures as a function of x
@@ -545,6 +549,7 @@ void Mesh::InitUserMeshData(ParameterInput *pin)
         std::cout << "Halo mass = " << haloMass << " Msun \n";
         std::cout << "Stellar mass = " << stellarMass << " Msun \n";
         std::cout << "SMBH mass = " << SMBHMass << " Msun \n";
+        std::cout << "Gravitational radius = " << gravitationalRadius * 1.e9 << " mpc \n";
         std::cout << "\n";
 
         std::cout << "Inner radius = " << innerRadius * 1.e6 << " pc \n";
@@ -612,6 +617,7 @@ void Mesh::InitUserMeshData(ParameterInput *pin)
         std::cout << "----ACCRETION----"
                   << "\n";
         std::cout << "Maximum accretion temperature = " << accretionMaxTemperature << " K \n";
+        std::cout << "Scaling factor for M_dot = " << scalingFactorMDot << "\n";
         std::cout << "\n";
 
         std::cout << "----RADIATIVE COOLING----"
@@ -678,7 +684,7 @@ void Mesh::InitUserMeshData(ParameterInput *pin)
     ruser_mesh_data[1](0) = 0.;           // cold gas
     ruser_mesh_data[1](1) = 0.;           // hot gas
     ruser_mesh_data[2].NewAthenaArray(2); // mass accreted in the last n time step (corresponding to the accretionUpdateFrequency), used to load onto jet
-    ruser_mesh_data[2](0) = 0.;
+    ruser_mesh_data[2](0) = 0.;           // cold mass accreted in the last n time steps
     ruser_mesh_data[2](1) = 0.;           // hot mass accreted in the last n time steps
     ruser_mesh_data[3].NewAthenaArray(2); // total mass accreted
     ruser_mesh_data[3](0) = 0.;           // total cold mass accreted
@@ -829,10 +835,10 @@ int RefinementCondition(MeshBlock *pmb)
     int currentRefinementLevel, requiredRefinementLevel, maximumAllowedAMRLevel;
     int requiredAMRLevel = 0;
     int requiredSMRLevel = numberOfRefinementLevels; // at first, assuming the refinement needed is highest
-    int maximumAllowedDifferenceSMR_AMRLevel = 3;    // highest allowable difference in AMR vs. the base SMR at this meshblock
+    int maximumAllowedDifferenceSMR_AMRLevel = 2;    // highest allowable difference in AMR vs. the base SMR at this meshblock
     int refinementCountFlag = 0;
 
-    maximumAllowedAMRLevel = numberOfRefinementLevels - 3; // highest level of AMR allowed w/r to the total number of refinement levels; reduce this number to speed up simulation
+    maximumAllowedAMRLevel = numberOfRefinementLevels - 2; // highest level of AMR allowed w/r to the total number of refinement levels; reduce this number to speed up simulation
 
     Real cellLengthCode = 0.;
     Real rootCellLengthCode = simulationBoxWidth / numberOfZones; // the width of the biggest cell in the domain
@@ -981,15 +987,16 @@ void Mesh::UserWorkInLoop()
 
         if (time >= ruser_mesh_data[4](0) + accretionUpdateFrequency / codeTime)
         {                                                                                          // update the amount of mass loaded onto jet per accretionUpdateFrequency
-            ruser_mesh_data[5](0) = ruser_mesh_data[2](0) / (accretionUpdateFrequency / codeTime); // <M_dot> = M_total / time, in code units
+            ruser_mesh_data[5](0) = ruser_mesh_data[2](0) / (accretionUpdateFrequency / codeTime); // <M_dot_cold> = M_total / time, in code units
             ruser_mesh_data[5](1) = ruser_mesh_data[2](1) / (accretionUpdateFrequency / codeTime); // <M_dot_hot>
 
-            Real jetPowerCGS = jetConversionEfficiency * (ruser_mesh_data[5](0) * codeMass / codeTime) * (solarMassCGS / MyrCGS) * pow(cCGS, 2); // P_jet = eff * <M_dot> * c^2
-            ruser_mesh_data[6](0) = jetPowerCGS / (solarMassCGS * pow(MpcCGS, 2) * pow(MyrCGS, -3)) / codePower;                                 // update jet power in code units, save for restart
+            // Modified 07/09/2024: now calculate jet power using the total mass accreted instead of just the cold mass, plus the scaling factor
+            Real jetPowerCGS = jetConversionEfficiency * ((ruser_mesh_data[5](0) + ruser_mesh_data[5](1)) * scalingFactorMDot * codeMass / codeTime) * (solarMassCGS / MyrCGS) * pow(cCGS, 2); // P_jet = eff * <M_dot|r_g> * c^2
+            ruser_mesh_data[6](0) = jetPowerCGS / (solarMassCGS * pow(MpcCGS, 2) * pow(MyrCGS, -3)) / codePower;                                                                               // update jet power in code units, save for restart
 
             if (Globals::my_rank == 0)
             {
-                std::cout << "Time = " << time * codeTime << " Myr, <M_dot> = " << ruser_mesh_data[5](0) * codeMass / codeTime / 1.e6 << " Msun yr^-1\n";
+                std::cout << "Time = " << time * codeTime << " Myr, <M_dot|r_in> = " << (ruser_mesh_data[5](0) + ruser_mesh_data[5](1)) * codeMass / codeTime / 1.e6 << " Msun yr^-1\n";
                 std::cout << "Jet power = " << jetPowerCGS << " erg s^-1 \n";
             }
 
@@ -1016,8 +1023,8 @@ void Mesh::UserWorkInLoop()
             std::cout.precision(4);
             // std::cout << "Mass of the inner region = " << innerMassCode * codeMass << " Msun \n";
             // every ncycle, output the instantaneous accretion rate
-            std::cout << "Hot accretion rate = " << updatedInnerHotMassCode * codeMass / (dt * codeTime * 1.e6) << " Msun yr^-1 \n";
-            std::cout << "Cold accretion rate = " << (updatedInnerColdMassCode - innerMassCode) * codeMass / (dt * codeTime * 1.e6) << " Msun yr^-1 \n";
+            std::cout << "M_dot_hot|r_in = " << updatedInnerHotMassCode * codeMass / (dt * codeTime * 1.e6) << " Msun yr^-1 \n";
+            std::cout << "M_dot_cold|r_in = " << (updatedInnerColdMassCode - innerMassCode) * codeMass / (dt * codeTime * 1.e6) << " Msun yr^-1 \n";
             // std::cout << "\n";
 
             if (time > amrTimeOn / codeTime && outputAMRSpecial)
@@ -1039,6 +1046,7 @@ void Mesh::UserWorkInLoop()
         {
             std::cout << "Previous refinement level = " << ruser_mesh_data[8](0) << "\n";
             std::cout << "New refinement level = " << numberOfRefinementLevels << "\n";
+            ruser_mesh_data[8](0) = numberOfRefinementLevels; // update the max level of refinement
         }
 
         if (currentInnerRadius > newInnerRadius)
@@ -1073,10 +1081,10 @@ void Mesh::UserWorkAfterLoop(ParameterInput *pin)
         std::cout.precision(4);
         std::cout << "\n";
         std::cout << "Current jet power = " << ruser_mesh_data[6](0) * codePower * (solarMassCGS * pow(MpcCGS, 2) * pow(MyrCGS, -3)) << " erg s^-1 \n";
-        std::cout << "Current <M_dot> = " << ruser_mesh_data[5](0) * codeMass / codeTime / 1.e6 << " Msun yr^-1 \n";
+        std::cout << "Current <M_dot|r_in> = " << (ruser_mesh_data[5](0) + ruser_mesh_data[5](1)) * codeMass / codeTime / 1.e6 << " Msun yr^-1 \n";
         std::cout << "Jet base cell height = " << ruser_mesh_data[7](0) * codeLength * 1.e6 << " pc \n";
         std::cout << "Jet precession azimuthal angle = " << ruser_mesh_data[7](1) * 180. / PI << " degrees \n";
-        std::cout << "Total accreted mass = " << ruser_mesh_data[3](0) * codeMass << " Msun \n";
+        std::cout << "Total accreted mass through r_in = " << ruser_mesh_data[3](0) * codeMass << " Msun \n";
     }
 }
 
@@ -1212,62 +1220,6 @@ void outerX3Boundary(MeshBlock *pmb, Coordinates *pco,
     }
 }
 
-/*
-Radial boundaries
-*/
-
-// void radialBoundaries(MeshBlock *pmb, const AthenaArray<Real> &prim,
-//                       AthenaArray<Real> &cons, int k, int j, int i,
-//                       Real z, Real y, Real x, Real r)
-// {
-//     Real primDensity = prim(IDN, k, j, i);
-//     // Real valueW = pmb->phydro->w(IDN, k, j, i);
-//     Real valueW1 = pmb->phydro->w1(IDN, k, j, i);
-
-//     if (r <= currentInnerRadius / codeLength)
-//     {
-//         if (valueW1 == primDensity) // check to see if the integrator has moved to the second sub-step of the rk2. Only record accretion here to avoid data being counted twice
-//         {                           // BAD FIX, CONSIDER WRITING MESHBLOCK::USERWORKINLOOP OR MEMORY ADDRESS POINTER TO AVOID CASES WHERE W = W1
-
-//             // Added 06/23/2023: calculate current temperature of cell to determine if accretion is hot or cold
-//             Real conservedNumberDensityCode = cons(IDN, k, j, i) / (conversionNtoRho / codeMass);
-//             Real kineticEnergyDensityCode = 0.5 * (SQR(cons(IM1, k, j, i)) + SQR(cons(IM2, k, j, i)) + SQR(cons(IM3, k, j, i))) / cons(IDN, k, j, i); // unit: mass / length / time^2 (checked)
-//             Real thermalEnergyDensityCode = cons(IEN, k, j, i) - kineticEnergyDensityCode;
-//             Real conservedTemperatureCode = gammaMinus1 * thermalEnergyDensityCode / (conservedNumberDensityCode * codeBoltzmannConst);
-
-//             Real cellVolumeCode = pmb->pcoord->GetCellVolume(k, j, i);
-
-//             if (pmb->pmy_mesh->ncycle == 0)
-//             { // at the start, record the base mass; at every time step after, record the modified mass
-//                 pmb->pmy_mesh->ruser_mesh_data[0](0) += primDensity * cellVolumeCode;
-//             }
-
-//             if (conservedTemperatureCode <= accretionMaxTemperature / codeTemperature)
-//             {
-//                 pmb->pmy_mesh->ruser_mesh_data[1](0) += cons(IDN, k, j, i) * cellVolumeCode; // add up the mass contribution inside the inner region before density is reset to floor
-//             }
-//             else
-//             {
-//                 pmb->pmy_mesh->ruser_mesh_data[1](1) += cons(IDN, k, j, i) * cellVolumeCode; // add up the mass contribution inside the inner region before density is reset to floor
-//             }
-//         }
-
-//         cons(IDN, k, j, i) = densityVacuumSinkAstronomical / codeDensity;                 // force sink density
-//         cons(IEN, k, j, i) = pressureVacuumSinkAstronomical / codePressure / gammaMinus1; // force floor pressure based on floor temperature
-//         cons(IM1, k, j, i) = 0.;                                                          // force zero velocity
-//         cons(IM2, k, j, i) = 0.;
-//         cons(IM3, k, j, i) = 0.;
-//     }
-//     else if (r > outerRadius / codeLength) // force outer region to be one value
-//     {
-//         cons(IDN, k, j, i) = densityAtOuterBoundary / codeDensity;                 // force density = density | r = outer radius
-//         cons(IEN, k, j, i) = pressureAtOuterBoundary / codePressure / gammaMinus1; // force pressure = pressure | r = outer radius
-//         cons(IM1, k, j, i) = 0.;                                                   // force zero velocity
-//         cons(IM2, k, j, i) = 0.;
-//         cons(IM3, k, j, i) = 0.;
-//     }
-// }
-
 void innerRadialBoundary(MeshBlock *pmb, const AthenaArray<Real> &prim,
                          AthenaArray<Real> &cons, int k, int j, int i,
                          Real z, Real y, Real x)
@@ -1281,7 +1233,7 @@ void innerRadialBoundary(MeshBlock *pmb, const AthenaArray<Real> &prim,
     {                           // BAD FIX, CONSIDER WRITING MESHBLOCK::USERWORKINLOOP OR MEMORY ADDRESS POINTER TO AVOID CASES WHERE W = W1
 
         // Added 06/23/2023: calculate current temperature of cell to determine if accretion is hot or cold
-        Real conservedNumberDensityCode = cons(IDN, k, j, i) / (conversionNtoRho / codeMass);
+        Real conservedNumberDensityCode = cons(IDN, k, j, i) / conversionNtoRhoCode;
         Real kineticEnergyDensityCode = computeKineticEnergyDensityCode(cons, k, j, i); // unit: mass / length / time^2 (checked)
         Real thermalEnergyDensityCode = cons(IEN, k, j, i) - kineticEnergyDensityCode;
         Real conservedTemperatureCode = gammaMinus1 * thermalEnergyDensityCode / (conservedNumberDensityCode * codeBoltzmannConst);
@@ -1360,7 +1312,7 @@ void allSourceFunctions(MeshBlock *pmb, const Real time, const Real dt,
                     // END ENFORCE TEMPERATURE AND DENSITY FLOOR
 
                     // JET FEEDBACK
-                    if (time > jetStartTime / codeTime && polarDistance <= jetLaunchingWidth / codeLength && r < 2 * jetLaunchingHeight / codeLength && !newGridFlag) // apply jet feedback only to the regions close to the jet platform
+                    if (time > jetStartTime / codeTime && polarDistance <= jetLaunchingWidth / codeLength && r < 2 * jetLaunchingHeight / codeLength && numberOfRefinementLevels < 14) // apply jet feedback only to the regions close to the jet platform
                     {
                         jetFeedbackSourceFunction(pmb, cons, prim, k, j, i, dt, z, y, x, polarDistance);
                     }
@@ -1527,20 +1479,22 @@ Cooling function, part of the source function
 void coolingSourceFunction(const Real dt, const AthenaArray<Real> &prim,
                            AthenaArray<Real> &cons, int k, int j, int i)
 {
-    Real primitiveNumberDensityCode = prim(IDN, k, j, i) / (conversionNtoRho / codeMass);
-    Real primitiveNumberDensityAstronomical = primitiveNumberDensityCode * codeNumberDensity;
-    Real primitiveTemperatureCode = prim(IPR, k, j, i) / (primitiveNumberDensityCode * codeBoltzmannConst); // trying to calculate temperature via pressure instead of energy to bypass thermal energy requirement
+    // Added 07/09/2024: some minor optimizations
 
-    Real conservedDensityCode = fmax(cons(IDN, k, j, i), densityFloorAstronomical / codeDensity); // take the bigger between cell density and floor density
-    Real conservedNumberDensityCode = conservedDensityCode / (conversionNtoRho / codeMass);
-    Real kineticEnergyDensityCode = 0.5 * (SQR(cons(IM1, k, j, i)) + SQR(cons(IM2, k, j, i)) + SQR(cons(IM3, k, j, i))) / conservedDensityCode; // unit: mass / length / time^2 (checked)
-    Real thermalEnergyDensityCode = cons(IEN, k, j, i) - kineticEnergyDensityCode;
-    Real conservedTemperatureCode = gammaMinus1 * thermalEnergyDensityCode / (conservedNumberDensityCode * codeBoltzmannConst);
+    const Real primitiveNumberDensityCode = prim(IDN, k, j, i) / conversionNtoRhoCode;
+    const Real primitiveNumberDensityAstronomical = primitiveNumberDensityCode * codeNumberDensity;
+    const Real primitiveTemperatureCode = prim(IPR, k, j, i) / (primitiveNumberDensityCode * codeBoltzmannConst); // trying to calculate temperature via pressure instead of energy to bypass thermal energy requirement
 
-    Real emissivityAstronomical = emissivityFromTemperature(primitiveTemperatureCode * codeTemperature);
+    const Real conservedDensityCode = fmax(cons(IDN, k, j, i), densityFloorAstronomical / codeDensity); // take the bigger between cell density and floor density
+    const Real conservedNumberDensityCode = conservedDensityCode / conversionNtoRhoCode;
+    const Real kineticEnergyDensityCode = 0.5 * (SQR(cons(IM1, k, j, i)) + SQR(cons(IM2, k, j, i)) + SQR(cons(IM3, k, j, i))) / conservedDensityCode; // unit: mass / length / time^2 (checked)
+    const Real thermalEnergyDensityCode = cons(IEN, k, j, i) - kineticEnergyDensityCode;
+    const Real conservedTemperatureCode = gammaMinus1 * thermalEnergyDensityCode / (conservedNumberDensityCode * codeBoltzmannConst);
+
+    const Real emissivityAstronomical = emissivityFromTemperature(primitiveTemperatureCode * codeTemperature); // let's try with no softening function and see how that goes
     // softening function for emissivity, from Guo+23 [added 03/24/2023]
-    emissivityAstronomical *= exp(-1.0e1 * pow(temperatureFloor / codeTemperature / primitiveTemperatureCode, 4.0));
-    Real coolingRateCode = coolingFunction(primitiveNumberDensityAstronomical, emissivityAstronomical) / (codeEnergyDensity / codeTime);
+    // emissivityAstronomical *= exp(-1.0e1 * pow(temperatureFloor / codeTemperature / primitiveTemperatureCode, 4.0));
+    const Real coolingRateCode = coolingFunction(primitiveNumberDensityAstronomical, emissivityAstronomical) / (codeEnergyDensity / codeTime);
     Real coolingLossCode = coolingRateCode * dt;
 
     // Make sure cooling is not too fast
@@ -1690,23 +1644,43 @@ static void crossProduct(std::vector<Real> r, std::vector<Real> p, Real *x, Real
 1D LINEAR INTERPOLATOR
 */
 
-static Real interpolate1D(Real inputX, std::vector<Real> tabulatedX, std::vector<Real> tabulatedY)
-{
-    std::vector<Real>::iterator upperIndexPointer;
+// static Real interpolate1D(Real inputX, std::vector<Real> tabulatedX, std::vector<Real> tabulatedY)
+// {
+//     std::vector<Real>::iterator upperIndexPointer;
 
-    upperIndexPointer = std::lower_bound(tabulatedX.begin(), tabulatedX.end(), inputX);
+//     upperIndexPointer = std::lower_bound(tabulatedX.begin(), tabulatedX.end(), inputX);
+//     int upperIndexX = (upperIndexPointer - tabulatedX.begin());
+//     int lowerIndexX = upperIndexX - 1;
+
+//     Real lowerBoundX = tabulatedX[lowerIndexX];
+//     Real upperBoundX = tabulatedX[upperIndexX];
+
+//     Real lowerBoundY = tabulatedY[lowerIndexX];
+//     Real upperBoundY = tabulatedY[upperIndexX];
+
+//     Real interpolatedY = (lowerBoundY * (upperBoundX - inputX) + upperBoundY * (inputX - lowerBoundX)) / (upperBoundX - lowerBoundX);
+
+//     return interpolatedY;
+// }
+
+// Added 07/09/2024: optimized linear interpolator, by GPT-4
+static Real interpolate1D(const Real inputX, const std::vector<Real> &tabulatedX, const std::vector<Real> &tabulatedY)
+{
+    auto upperIndexPointer = std::lower_bound(tabulatedX.begin(), tabulatedX.end(), inputX);
     int upperIndexX = (upperIndexPointer - tabulatedX.begin());
     int lowerIndexX = upperIndexX - 1;
 
-    Real lowerBoundX = tabulatedX[lowerIndexX];
-    Real upperBoundX = tabulatedX[upperIndexX];
+    const Real lowerBoundX = tabulatedX[lowerIndexX];
+    const Real upperBoundX = tabulatedX[upperIndexX];
 
-    Real lowerBoundY = tabulatedY[lowerIndexX];
-    Real upperBoundY = tabulatedY[upperIndexX];
+    const Real lowerBoundY = tabulatedY[lowerIndexX];
+    const Real upperBoundY = tabulatedY[upperIndexX];
 
-    Real interpolatedY = (lowerBoundY * (upperBoundX - inputX) + upperBoundY * (inputX - lowerBoundX)) / (upperBoundX - lowerBoundX);
+    const Real deltaX = upperBoundX - lowerBoundX;
+    const Real weightUpper = (inputX - lowerBoundX) / deltaX;
+    const Real weightLower = (upperBoundX - inputX) / deltaX;
 
-    return interpolatedY;
+    return lowerBoundY * weightLower + upperBoundY * weightUpper;
 }
 
 // Added 02/08/2024: Hopefully a faster linear interpolator
@@ -1738,7 +1712,7 @@ Enforce a temperature and density floor if a cell has lower temperature/density 
 void enforceFloors(MeshBlock *pmb, AthenaArray<Real> &cons, int k, int j, int i)
 {
     // Added 11/23/2023: enforce density floor correctly by fixing velocity and temperature
-    Real numberDensityCode = cons(IDN, k, j, i) / (conversionNtoRho / codeMass);
+    Real numberDensityCode = cons(IDN, k, j, i) / conversionNtoRhoCode;
 
     if (numberDensityCode < numberDensityFloorAstronomical / codeNumberDensity)
     {
@@ -1748,7 +1722,7 @@ void enforceFloors(MeshBlock *pmb, AthenaArray<Real> &cons, int k, int j, int i)
         cons(IM3, k, j, i) *= cons(IDN, k, j, i) / numberDensityCode;
         cons(IEN, k, j, i) *= cons(IDN, k, j, i) / numberDensityCode; // keep the temperature constant
 
-        numberDensityCode = cons(IDN, k, j, i) / (conversionNtoRho / codeMass); // update the number density
+        numberDensityCode = cons(IDN, k, j, i) / conversionNtoRhoCode; // update the number density
     }
 
     // Added 11/23/2023: enforce temperature floor correctly by fixing velocity and density
@@ -1769,7 +1743,7 @@ Cooling time, for refinement condition
 
 static Real coolingTime(AthenaArray<Real> &w, int k, int j, int i)
 { // function is 5/2 nkT / n^2 Lambda, return code units
-    Real primitiveNumberDensityCode = w(IDN, k, j, i) / (conversionNtoRho / codeMass);
+    Real primitiveNumberDensityCode = w(IDN, k, j, i) / conversionNtoRhoCode;
     Real primitiveTemperatureAstronomical = w(IPR, k, j, i) / (primitiveNumberDensityCode * codeBoltzmannConst) * codeTemperature;
 
     return (5. / 2.) * boltzmannConstAstronomical * primitiveTemperatureAstronomical / (primitiveNumberDensityCode * codeNumberDensity * emissivityFromTemperature(primitiveTemperatureAstronomical)) / codeTime;
