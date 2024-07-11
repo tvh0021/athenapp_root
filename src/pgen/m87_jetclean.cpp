@@ -115,8 +115,8 @@ static Real computeKineticEnergyDensityCode(AthenaArray<Real> &cons, int k, int 
 
 void coolingSourceFunction(const Real dt, const AthenaArray<Real> &prim,
                            AthenaArray<Real> &cons, int k, int j, int i);
-static Real emissivityFromTemperature(Real temperature);
-static Real coolingFunction(Real numberDensity, Real emissivity);
+static Real emissivityFromTemperature(const Real temperature);
+static Real coolingFunction(const Real numberDensity, const Real emissivity);
 
 void jetFeedbackSourceFunction(MeshBlock *pmb, AthenaArray<Real> &cons, const AthenaArray<Real> &prim,
                                int k, int j, int i, const Real dt,
@@ -393,13 +393,15 @@ void Mesh::InitUserMeshData(ParameterInput *pin)
     {
         newOuterBoundary = pin->GetOrAddReal("restart", "boundary", 3.e-4); // new start of refinement radius in Mpc
         numberOfStepsToReachNewSink = 0;                                    // pin->GetOrAddInteger("restart", "n_step", 1000); // number of time steps to reach the new sink radius
-        timeToReachNewSink = pin->GetOrAddReal("restart", "t_step", 1e-4);  // amount of time to reach the new sink radius in Myr, 1e-4 is roughly equal to the free fall time at 1pc
+        timeToReachNewSink = pin->GetOrAddReal("restart", "t_step", 0.01);  // amount of time to reach the new sink radius in Myr, 1e-4 is roughly equal to the free fall time at 1pc
         newInnerRadius = pin->GetOrAddReal("restart", "r_in_new", 1.e-7);   // final inner radius of the meso-scale simulation in Mpc; M87 has rg = 140 AU or ~6e-4 pc. At 0.1 pc inner radius, this corresponds to ~200 rg's.
         // d_innerRadius = (innerRadius - newInnerRadius) / numberOfStepsToReachNewSink;  // change in inner radius per time step
         d_innerRadius = (innerRadius - newInnerRadius) / timeToReachNewSink; // change in inner radius per unit time
         smallestCellWidth = simulationBoxWidth / numberOfZones / pow(2., numberOfRefinementLevels - 1);
         zoomInStep = ncycle;
-        accretionUpdateFrequency /= 32.; // update accretion rate more frequently during zoom-in
+        accretionUpdateFrequency /= (innerRadius / newInnerRadius); // update accretion rate more frequently during zoom-in
+        jetLaunchingHeight = newInnerRadius * jetLaunchingHeightScale;
+        jetLaunchingWidth = newInnerRadius * jetLaunchingWidthScale;
     }
 
     configuration = pin->GetString("comment", "configure");
@@ -991,8 +993,8 @@ void Mesh::UserWorkInLoop()
             ruser_mesh_data[5](1) = ruser_mesh_data[2](1) / (accretionUpdateFrequency / codeTime); // <M_dot_hot>
 
             // Modified 07/09/2024: now calculate jet power using the total mass accreted instead of just the cold mass, plus the scaling factor
-            Real jetPowerCGS = jetConversionEfficiency * ((ruser_mesh_data[5](0) + ruser_mesh_data[5](1)) * scalingFactorMDot * codeMass / codeTime) * (solarMassCGS / MyrCGS) * pow(cCGS, 2); // P_jet = eff * <M_dot|r_g> * c^2
-            ruser_mesh_data[6](0) = jetPowerCGS / (solarMassCGS * pow(MpcCGS, 2) * pow(MyrCGS, -3)) / codePower;                                                                               // update jet power in code units, save for restart
+            const Real jetPowerCGS = jetConversionEfficiency * ((ruser_mesh_data[5](0) + ruser_mesh_data[5](1)) * scalingFactorMDot * codeMass / codeTime) * (solarMassCGS / MyrCGS) * pow(cCGS, 2); // P_jet = eff * <M_dot|r_g> * c^2
+            ruser_mesh_data[6](0) = jetPowerCGS / (solarMassCGS * pow(MpcCGS, 2) * pow(MyrCGS, -3)) / codePower;                                                                                     // update jet power in code units, save for restart
 
             if (Globals::my_rank == 0)
             {
@@ -1233,12 +1235,12 @@ void innerRadialBoundary(MeshBlock *pmb, const AthenaArray<Real> &prim,
     {                           // BAD FIX, CONSIDER WRITING MESHBLOCK::USERWORKINLOOP OR MEMORY ADDRESS POINTER TO AVOID CASES WHERE W = W1
 
         // Added 06/23/2023: calculate current temperature of cell to determine if accretion is hot or cold
-        Real conservedNumberDensityCode = cons(IDN, k, j, i) / conversionNtoRhoCode;
-        Real kineticEnergyDensityCode = computeKineticEnergyDensityCode(cons, k, j, i); // unit: mass / length / time^2 (checked)
-        Real thermalEnergyDensityCode = cons(IEN, k, j, i) - kineticEnergyDensityCode;
-        Real conservedTemperatureCode = gammaMinus1 * thermalEnergyDensityCode / (conservedNumberDensityCode * codeBoltzmannConst);
+        const Real conservedNumberDensityCode = cons(IDN, k, j, i) / conversionNtoRhoCode;
+        const Real kineticEnergyDensityCode = computeKineticEnergyDensityCode(cons, k, j, i); // unit: mass / length / time^2 (checked)
+        const Real thermalEnergyDensityCode = cons(IEN, k, j, i) - kineticEnergyDensityCode;
+        const Real conservedTemperatureCode = gammaMinus1 * thermalEnergyDensityCode / (conservedNumberDensityCode * codeBoltzmannConst);
 
-        Real cellVolumeCode = pmb->pcoord->GetCellVolume(k, j, i);
+        const Real cellVolumeCode = pmb->pcoord->GetCellVolume(k, j, i);
 
         if (pmb->pmy_mesh->ncycle == 0)
         { // at the start, record the base mass; at every time step after, record the modified mass
@@ -1284,15 +1286,15 @@ void allSourceFunctions(MeshBlock *pmb, const Real time, const Real dt,
 {
     for (int k = pmb->ks; k <= pmb->ke; ++k)
     {
-        Real z = pmb->pcoord->x3v(k);
+        const Real z = pmb->pcoord->x3v(k);
         for (int j = pmb->js; j <= pmb->je; ++j)
         {
-            Real y = pmb->pcoord->x2v(j);
+            const Real y = pmb->pcoord->x2v(j);
             for (int i = pmb->is; i <= pmb->ie; ++i)
             {
-                Real x = pmb->pcoord->x1v(i);
-                Real r = sqrt(SQR(x) + SQR(y) + SQR(z));    // radial distance in code unit
-                Real polarDistance = sqrt(SQR(x) + SQR(y)); // polar distance in code unit
+                const Real x = pmb->pcoord->x1v(i);
+                const Real r = sqrt(SQR(x) + SQR(y) + SQR(z));    // radial distance in code unit
+                const Real polarDistance = sqrt(SQR(x) + SQR(y)); // polar distance in code unit
 
                 if (r <= outerRadius / codeLength)
                 {
@@ -1347,11 +1349,11 @@ Gravity function, part of the source function
 void gravitySourceFunction(MeshBlock *pmb, const Real dt, const AthenaArray<Real> &prim,
                            AthenaArray<Real> &cons, int k, int j, int i, Real z, Real y, Real x, Real r)
 {
-    Real rDoubleDot = gravitationalAcceleration(r * codeLength) / codeAcceleration; // radial acceleration in code units
+    const Real rDoubleDot = gravitationalAcceleration(r * codeLength) / codeAcceleration; // radial acceleration in code units
 
-    Real deltaU = dt * rDoubleDot * x / r; // sin(theta) * cos(phi) = x/r
-    Real deltaV = dt * rDoubleDot * y / r; // sin(theta) * sin(phi) = y/r
-    Real deltaW = dt * rDoubleDot * z / r; // cos(theta) = z/r
+    const Real deltaU = dt * rDoubleDot * x / r; // sin(theta) * cos(phi) = x/r
+    const Real deltaV = dt * rDoubleDot * y / r; // sin(theta) * sin(phi) = y/r
+    const Real deltaW = dt * rDoubleDot * z / r; // cos(theta) = z/r
 
     cons(IM1, k, j, i) += prim(IDN, k, j, i) * deltaU;
     cons(IM2, k, j, i) += prim(IDN, k, j, i) * deltaV;
@@ -1366,8 +1368,8 @@ Enclosed mass profile of the three main components: SMBH, stars, dark matter
 
 static Real massFuncOfR(const Real distanceFromSMBH)
 {
-    Real haloMassFuncOfR = haloMass * (log(1 + distanceFromSMBH / haloRadius) - (distanceFromSMBH / (haloRadius + distanceFromSMBH)));
-    Real stellarMassFuncOfR = stellarMass * (log(1. + distanceFromSMBH / stellarRadius) - (distanceFromSMBH / (stellarRadius + distanceFromSMBH)));
+    const Real haloMassFuncOfR = haloMass * (log(1 + distanceFromSMBH / haloRadius) - (distanceFromSMBH / (haloRadius + distanceFromSMBH)));
+    const Real stellarMassFuncOfR = stellarMass * (log(1. + distanceFromSMBH / stellarRadius) - (distanceFromSMBH / (stellarRadius + distanceFromSMBH)));
     return haloMassFuncOfR + SMBHMass + stellarMassFuncOfR;
 }
 
@@ -1381,8 +1383,8 @@ static Real gravitationalAcceleration(const Real distanceFromSMBH)
 
     if (distanceFromSMBH <= currentInnerRadius) // softening by a potential factor, Eq 13 of Guo+23
     {
-        Real r_a = 0.5 * currentInnerRadius;
-        Real factorU = exp(-SQR(distanceFromSMBH / r_a));
+        const Real r_a = 0.5 * currentInnerRadius;
+        const Real factorU = exp(-SQR(distanceFromSMBH / r_a));
         gravitationalAccelerationFuncOfR *= pow(distanceFromSMBH, 3) * (1 - factorU) / pow(SQR(distanceFromSMBH) + SQR(r_a) * factorU, 1.5);
     }
     return gravitationalAccelerationFuncOfR;
@@ -1454,9 +1456,9 @@ Produce a table of normalized radial distances (dimensionlessX), densities, and 
 
 static void tabulatedNumberDensitiesAndPressures()
 {
-    Real a = log10(simulationBoxWidth * codeLength / scaledRadius);                                                           // set largest radius = box width to account for ghost zones
-    Real b = log10(simulationBoxWidth / pow(2., numberOfRefinementLevels) / (numberOfZones * 2) * codeLength / scaledRadius); // set smallest radius = 1/2 width of the smallest cell
-    Real spacing = (a - b) / (numberOfTabulatedEntries - 1);
+    const Real a = log10(simulationBoxWidth * codeLength / scaledRadius);                                                           // set largest radius = box width to account for ghost zones
+    const Real b = log10(simulationBoxWidth / pow(2., numberOfRefinementLevels) / (numberOfZones * 2) * codeLength / scaledRadius); // set smallest radius = 1/2 width of the smallest cell
+    const Real spacing = (a - b) / (numberOfTabulatedEntries - 1);
 
     for (int i = 0; i < numberOfTabulatedEntries; ++i)
     {
@@ -1514,24 +1516,21 @@ void coolingSourceFunction(const Real dt, const AthenaArray<Real> &prim,
 Emissivity Lambda as a function of temperature, a piece-wise function
 */
 
-static Real emissivityFromTemperature(Real temperature)
+static Real emissivityFromTemperature(const Real temperature)
 {
-    Real emissivityCGS, emissivityAstronomical;
-    Real logTemperature = log10(temperature);
+    const Real logTemperature = log10(temperature);
 
     // Modified 08/02/2023: interpolate all data points instead of if-else clause to speed up computation
-    emissivityCGS = pow(10., interpolate1D(logTemperature, logTemperatureArray, logEmissivityHydroArray));
+    const Real emissivityCGS = pow(10., interpolate1D(logTemperature, logTemperatureArray, logEmissivityHydroArray));
 
-    emissivityAstronomical = emissivityCGS / (solarMassCGS * pow(MpcCGS, 5) * pow(MyrCGS, -3));
-
-    return emissivityAstronomical;
+    return emissivityCGS / (solarMassCGS * pow(MpcCGS, 5) * pow(MyrCGS, -3)); // convert to astronomical units
 }
 
 /*
 Cooling function as a function of number density and emissivity
 */
 
-static Real coolingFunction(Real numberDensity, Real emissivity)
+static Real coolingFunction(const Real numberDensity, const Real emissivity)
 {
     return SQR(numberDensity) * emissivity;
 }
@@ -1548,23 +1547,23 @@ void jetFeedbackSourceFunction(MeshBlock *pmb, AthenaArray<Real> &cons, const At
                                int k, int j, int i, const Real dt,
                                Real z, Real y, Real x, Real polarDistance)
 {
-    Real cellHeightCode = pmb->pcoord->GetEdge3Length(k, j, i);
+    const Real cellHeightCode = pmb->pcoord->GetEdge3Length(k, j, i);
     pmb->pmy_mesh->ruser_mesh_data[7](0) = cellHeightCode;
-    Real &jetPrecessionAnglePhi = pmb->pmy_mesh->ruser_mesh_data[7](1); // current azimuthal angle of jet
-    Real &jetMassLaunchRateCode = pmb->pmy_mesh->ruser_mesh_data[5](0); // mass launch equals mass accreted
+    const Real &jetPrecessionAnglePhi = pmb->pmy_mesh->ruser_mesh_data[7](1); // current azimuthal angle of jet
+    const Real &jetMassLaunchRateCode = pmb->pmy_mesh->ruser_mesh_data[5](0); // mass launch equals mass accreted
 
     if ((z < jetLaunchingHeight / codeLength + 0.5 * cellHeightCode) && (z > jetLaunchingHeight / codeLength - 0.5 * cellHeightCode))
-    {                                                                                           // top jet
-        Real jetPlatformVolumeCode = PI * SQR(jetLaunchingWidth / codeLength) * cellHeightCode; // density = mass / volume, where volume = pi * R^2 * h, and mass = mass rate * dt
+    {                                                                                                 // top jet
+        const Real jetPlatformVolumeCode = PI * SQR(jetLaunchingWidth / codeLength) * cellHeightCode; // density = mass / volume, where volume = pi * R^2 * h, and mass = mass rate * dt
 
         // Added 06/14/2023: adding the Gaussian profile of the jet, following Li & Bryan (2014)
         Real profileWeight = 1.;
-        Real jetSmoothingRadiusCode = 0.35 * jetLaunchingWidth / codeLength;             // this gives a 99.5% CDF profile
+        const Real jetSmoothingRadiusCode = 0.35 * jetLaunchingWidth / codeLength;       // this gives a 99.5% CDF profile
         profileWeight = 4.152 * exp(-0.5 * SQR(polarDistance / jetSmoothingRadiusCode)); // the factor 4.152 is numerically calculated to ensure total mass of the jet base equal to accreted mass, will differs for different smoothing factor
 
         // Added 06/17/2023: rewrote again to be consistent with Li & Bryan (2014)
-        Real cellKineticEnergyDensityCode = computeKineticEnergyDensityCode(cons, k, j, i); // KE = p^2 / 2 rho
-        Real cellThermalEnergyDensityCode = cons(IEN, k, j, i) - cellKineticEnergyDensityCode;
+        const Real cellKineticEnergyDensityCode = computeKineticEnergyDensityCode(cons, k, j, i); // KE = p^2 / 2 rho
+        const Real cellThermalEnergyDensityCode = cons(IEN, k, j, i) - cellKineticEnergyDensityCode;
 
         // Added 07/04/2023: jet precession
         Real jetVelocityXAstronomical, jetVelocityYAstronomical, jetVelocityZAstronomical;
@@ -1573,32 +1572,32 @@ void jetFeedbackSourceFunction(MeshBlock *pmb, AthenaArray<Real> &cons, const At
         jetVelocityYAstronomical = jetVelocityAstronomical * sin(jetPrecessionAnglePhi) * sin(jetPrecessionAngleTheta);
         jetVelocityZAstronomical = jetVelocityAstronomical * cos(jetPrecessionAngleTheta);
 
-        Real jetDensityCode = 0.5 * dt * jetMassLaunchRateCode * profileWeight / jetPlatformVolumeCode;
+        const Real jetDensityCode = 0.5 * dt * jetMassLaunchRateCode * profileWeight / jetPlatformVolumeCode;
         cons(IDN, k, j, i) += jetDensityCode;                                           // inject density
         cons(IM1, k, j, i) += jetDensityCode * jetVelocityXAstronomical / codeVelocity; // inject momentum
         cons(IM2, k, j, i) += jetDensityCode * jetVelocityYAstronomical / codeVelocity;
         cons(IM3, k, j, i) += jetDensityCode * jetVelocityZAstronomical / codeVelocity;
 
-        Real jetKineticEnergyDensityCode = 0.5 * jetDensityCode * SQR(jetVelocityAstronomical / codeVelocity); // KE = 1/2 rho v^2
-        Real jetThermalEnergyDensityCode = (1. - jetKineticFraction) / jetKineticFraction * jetKineticEnergyDensityCode;
+        const Real jetKineticEnergyDensityCode = 0.5 * jetDensityCode * SQR(jetVelocityAstronomical / codeVelocity); // KE = 1/2 rho v^2
+        const Real jetThermalEnergyDensityCode = (1. - jetKineticFraction) / jetKineticFraction * jetKineticEnergyDensityCode;
 
-        Real updatedKineticEnergyDensityCode = computeKineticEnergyDensityCode(cons, k, j, i); // KE = p^2 / 2 rho
-        Real updatedThermalEnergyDensityCode = cellThermalEnergyDensityCode + jetThermalEnergyDensityCode;
+        const Real updatedKineticEnergyDensityCode = computeKineticEnergyDensityCode(cons, k, j, i); // KE = p^2 / 2 rho
+        const Real updatedThermalEnergyDensityCode = cellThermalEnergyDensityCode + jetThermalEnergyDensityCode;
 
         cons(IEN, k, j, i) = updatedKineticEnergyDensityCode + updatedThermalEnergyDensityCode; // update energy
     }
     else if ((z > -1. * jetLaunchingHeight / codeLength - 0.5 * cellHeightCode) && (z < -1. * jetLaunchingHeight / codeLength + 0.5 * cellHeightCode))
-    {                                                                                           // bottom jet
-        Real jetPlatformVolumeCode = PI * SQR(jetLaunchingWidth / codeLength) * cellHeightCode; // density = mass / volume, where volume = pi * R^2 * h, and mass = mass rate * dt
+    {                                                                                                 // bottom jet
+        const Real jetPlatformVolumeCode = PI * SQR(jetLaunchingWidth / codeLength) * cellHeightCode; // density = mass / volume, where volume = pi * R^2 * h, and mass = mass rate * dt
 
         // Added 06/14/2023: adding the Gaussian profile of the jet, following Li & Bryan (2014)
         Real profileWeight = 1.;
-        Real jetSmoothingRadiusCode = 0.35 * jetLaunchingWidth / codeLength;             // this gives a 99.5% CDF profile
+        const Real jetSmoothingRadiusCode = 0.35 * jetLaunchingWidth / codeLength;       // this gives a 99.5% CDF profile
         profileWeight = 4.152 * exp(-0.5 * SQR(polarDistance / jetSmoothingRadiusCode)); // the factor 4.152 is numerically calculated to ensure total mass of the jet base equal to accreted mass, will differs for different smoothing factor
 
         // Added 06/17/2023: rewrote again to be consistent with Li & Bryan (2014)
-        Real cellKineticEnergyDensityCode = computeKineticEnergyDensityCode(cons, k, j, i); // KE = p^2 / 2 rho
-        Real cellThermalEnergyDensityCode = cons(IEN, k, j, i) - cellKineticEnergyDensityCode;
+        const Real cellKineticEnergyDensityCode = computeKineticEnergyDensityCode(cons, k, j, i); // KE = p^2 / 2 rho
+        const Real cellThermalEnergyDensityCode = cons(IEN, k, j, i) - cellKineticEnergyDensityCode;
 
         // Added 07/04/2023: jet precession
         Real jetVelocityXAstronomical, jetVelocityYAstronomical, jetVelocityZAstronomical;
@@ -1607,17 +1606,17 @@ void jetFeedbackSourceFunction(MeshBlock *pmb, AthenaArray<Real> &cons, const At
         jetVelocityYAstronomical = jetVelocityAstronomical * sin(jetPrecessionAnglePhi) * sin(jetPrecessionAngleTheta);
         jetVelocityZAstronomical = jetVelocityAstronomical * cos(jetPrecessionAngleTheta);
 
-        Real jetDensityCode = 0.5 * dt * jetMassLaunchRateCode * profileWeight / jetPlatformVolumeCode;
+        const Real jetDensityCode = 0.5 * dt * jetMassLaunchRateCode * profileWeight / jetPlatformVolumeCode;
         cons(IDN, k, j, i) += jetDensityCode;                                            // inject density
         cons(IM1, k, j, i) += -jetDensityCode * jetVelocityXAstronomical / codeVelocity; // inject momentum
         cons(IM2, k, j, i) += -jetDensityCode * jetVelocityYAstronomical / codeVelocity;
         cons(IM3, k, j, i) += -jetDensityCode * jetVelocityZAstronomical / codeVelocity;
 
-        Real jetKineticEnergyDensityCode = 0.5 * jetDensityCode * SQR(jetVelocityAstronomical / codeVelocity); // KE = 1/2 rho v^2
-        Real jetThermalEnergyDensityCode = (1. - jetKineticFraction) / jetKineticFraction * jetKineticEnergyDensityCode;
+        const Real jetKineticEnergyDensityCode = 0.5 * jetDensityCode * SQR(jetVelocityAstronomical / codeVelocity); // KE = 1/2 rho v^2
+        const Real jetThermalEnergyDensityCode = (1. - jetKineticFraction) / jetKineticFraction * jetKineticEnergyDensityCode;
 
-        Real updatedKineticEnergyDensityCode = computeKineticEnergyDensityCode(cons, k, j, i); // KE = p^2 / 2 rho
-        Real updatedThermalEnergyDensityCode = cellThermalEnergyDensityCode + jetThermalEnergyDensityCode;
+        const Real updatedKineticEnergyDensityCode = computeKineticEnergyDensityCode(cons, k, j, i); // KE = p^2 / 2 rho
+        const Real updatedThermalEnergyDensityCode = cellThermalEnergyDensityCode + jetThermalEnergyDensityCode;
 
         cons(IEN, k, j, i) = updatedKineticEnergyDensityCode + updatedThermalEnergyDensityCode; // update energy
     }
@@ -1727,12 +1726,12 @@ void enforceFloors(MeshBlock *pmb, AthenaArray<Real> &cons, int k, int j, int i)
 
     // Added 11/23/2023: enforce temperature floor correctly by fixing velocity and density
 
-    Real kineticEnergyDensityCode = computeKineticEnergyDensityCode(cons, k, j, i);
-    Real temperatureCode = gammaMinus1 * (cons(IEN, k, j, i) - kineticEnergyDensityCode) / (numberDensityCode * codeBoltzmannConst);
+    const Real kineticEnergyDensityCode = computeKineticEnergyDensityCode(cons, k, j, i);
+    const Real temperatureCode = gammaMinus1 * (cons(IEN, k, j, i) - kineticEnergyDensityCode) / (numberDensityCode * codeBoltzmannConst);
 
     if (temperatureCode < temperatureFloor / codeTemperature)
     {
-        Real fractionTemperatureChange = temperatureFloor / codeTemperature / temperatureCode;
+        const Real fractionTemperatureChange = temperatureFloor / codeTemperature / temperatureCode;
         cons(IEN, k, j, i) = fractionTemperatureChange * (cons(IEN, k, j, i) - kineticEnergyDensityCode) + kineticEnergyDensityCode; // the new internal energy, assuming velocity and density are constant
     }
 }
@@ -1788,14 +1787,7 @@ Real hotAccretionRate(MeshBlock *pmb, int iout)
 
 Real jetPower(MeshBlock *pmb, int iout)
 { // unit is erg s^-1
-    if (newGridFlag)
-    {
-        return 0.;
-    }
-    else
-    {
-        return pmb->pmy_mesh->ruser_mesh_data[6](0) * codePower * (solarMassCGS * pow(MpcCGS, 2) * pow(MyrCGS, -3));
-    }
+    return pmb->pmy_mesh->ruser_mesh_data[6](0) * codePower * (solarMassCGS * pow(MpcCGS, 2) * pow(MyrCGS, -3));
 }
 
 /*
