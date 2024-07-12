@@ -391,7 +391,7 @@ void Mesh::InitUserMeshData(ParameterInput *pin)
 
     if (newGridFlag)
     {
-        newOuterBoundary = pin->GetOrAddReal("restart", "boundary", 3.e-4);    // new start of refinement radius in Mpc
+        // newOuterBoundary = pin->GetOrAddReal("restart", "boundary", 3.e-4);    // new start of refinement radius in Mpc
         numberOfStepsToReachNewSink = 0;                                       // pin->GetOrAddInteger("restart", "n_step", 1000); // number of time steps to reach the new sink radius
         timeToReachNewSink = pin->GetOrAddReal("restart", "t_new_sink", 0.01); // amount of time to reach the new sink radius in Myr, 1e-4 is roughly equal to the free fall time at 1pc
         newInnerRadius = pin->GetOrAddReal("restart", "r_in_new", 1.e-7);      // final inner radius of the meso-scale simulation in Mpc; M87 has rg = 140 AU or ~6e-4 pc. At 0.1 pc inner radius, this corresponds to ~200 rg's.
