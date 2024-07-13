@@ -16,6 +16,8 @@ sys.path.append("/Users/tvh0021//git_repos/ehtplot")
 import ehtplot.color
 
 import argparse
+from multiprocessing import Pool
+from multiprocessing import cpu_count
 
 #unit conversions
 code_length = 0.064
@@ -205,9 +207,9 @@ def makeFilename (pathName : str, baseExtension : str, n : int) -> str:
     return f"{pathName}{baseExtension}{file_n}.athdf"
 
 
-lookup_units = {'number_density': 'cm**-3', 'pressure': 'Pa', 'density': 'g/cm**3', 'temperature': 'K', 'normalized_angular_momentum_z':'', 'velocity_z':'km/s'}
-lookup_range = {'number_density': (1.e-2, 1.e7), 'pressure': (1.e-13, 1.e-11), 'density': (1.e-26, 1.e-23), 'temperature': (2.e5, 1.e9), 'normalized_angular_momentum_z':(-1.2,1.2), 'velocity_z':(-1.e3,1.e3)}
-lookup_cmap = {'number_density': 'afmhot_10us', 'pressure': 'viridis', 'density': 'magma', 'temperature': 'RdBu_r', 'normalized_angular_momentum_z':'jet', 'velocity_z':'viridis'}
+lookup_units = {'number_density': 'cm**-3', 'pressure': 'Pa', 'density': 'g/cm**3', 'temperature': 'K', 'normalized_angular_momentum_z':'', 'vr':'km/s'}
+lookup_range = {'number_density': (1.e-2, 1.e7), 'pressure': (1.e-13, 1.e-11), 'density': (1.e-26, 1.e-23), 'temperature': (2.e5, 1.e9), 'normalized_angular_momentum_z':(-1.2,1.2), 'vr':(-1.e3,1.e3)}
+lookup_cmap = {'number_density': 'afmhot_10us', 'pressure': 'viridis', 'density': 'magma', 'temperature': 'RdBu_r', 'normalized_angular_momentum_z':'jet', 'vr':'viridis'}
 
 def make_plots(location: str, base_ext: str, dimensions: list[str], types: list[str], window: list[tuple], start_nfile: int, stop_nfile: int, method: str, velocity_on: bool = False):
     for dim in dimensions:
@@ -249,7 +251,7 @@ def make_plots(location: str, base_ext: str, dimensions: list[str], types: list[
                         p.set_cmap(plot_type,lookup_cmap[plot_type])
                         p.annotate_scale(corner='lower_left')
                         p.annotate_timestamp(time_unit="Myr",corner='upper_right')
-                        p.annotate_title(f"128-5, {dim} {plot_type} projection")
+                        p.annotate_title(f"{dim} {plot_type} projection")
                         if velocity_on:
                             p.annotate_streamlines(("gas", f"velocity_{restrict_dim[0]}"), ("gas", f"velocity_{restrict_dim[1]}"),factor=2,density=3)
                         p.hide_axes()
@@ -262,19 +264,50 @@ def make_plots(location: str, base_ext: str, dimensions: list[str], types: list[
                         s.set_unit(("gas", plot_type), lookup_units[plot_type])
                         if plot_type == 'normalized_angular_momentum_z':
                             s.set_log(plot_type, linthresh=0.75)
-                        if plot_type == 'velocity_z':
+                        if plot_type == 'vr':
                             s.set_log(plot_type, linthresh=1.e2)
                         s.set_zlim(plot_type,zmin=lookup_range[plot_type][0],zmax=lookup_range[plot_type][1])
                         s.set_cmap(plot_type,lookup_cmap[plot_type])
                         s.annotate_scale(corner='lower_left')
                         s.annotate_timestamp(time_unit="Myr",corner='upper_right')
-                        s.annotate_title(f"Z128CDJ5-U.7GP, {dim} {plot_type} slice")
+                        s.annotate_title(f"{dim} {plot_type} slice")
                         s.hide_axes()
                         if (dim == 'y'):
                             s.swap_axes()
                         if velocity_on:
                             s.annotate_streamlines(("gas", f"velocity_{restrict_dim[0]}"), ("gas", f"velocity_{restrict_dim[1]}"),factor=2,density=3)
                         s.save(location+f'slice,{dim},{plot_type},{zoom[0]}/{base_ext}{ind}.png')
+
+
+def get_multiple_snapshots(location: str, base_ext: str, dimensions: list[str], types: list[str], window: list[tuple], start_nfile: int, stop_nfile: int, method: str, velocity_on: bool = False):
+    """With multiprocessing, generate multiple snapshots of the simulation data at once and save them to the specified location
+
+    Args:
+        location (str): path to the simulation data
+        base_ext (str): base extension of the snapshot files
+        dimensions (list[str]): a list of dimensions to plot ('x', 'y', 'z', 'c' for custom projection)
+        types (list[str]): a list of physical quantities to plot ('temperature', 'number_density', 'pressure', 'density', 'normalized_angular_momentum_z', 'vr')
+        window (list[tuple]): a list of window sizes for the plots in kpc
+        start_nfile (int): starting snapshot number
+        stop_nfile (int): ending snapshot number
+        method (str): slice or projection
+        velocity_on (bool, optional): whether velocity streamlines are plotted. Defaults to False.
+
+    Returns:
+        None: all snapshots are saved to the specified location
+    """
+
+    # kernel_size = kernelA.shape[0]
+    # extended_feature = np.pad(feature_array, ((kernel_size//2,kernel_size//2),(kernel_size//2,kernel_size//2),(kernel_size//2,kernel_size//2)), mode='wrap')
+    print("Saving snapshots using {} cores".format(cpu_count()), flush=True)
+
+    with Pool() as p:
+        items = [(location, base_ext, dimensions, types, window, k, k, method, velocity_on) for k in range(start_nfile, stop_nfile+1)]
+
+        for k in enumerate(p.starmap(make_plots, items)):
+            print(f"Snapshot {k} done", flush=True)
+        
+    print("All snapshots saved to " + location)
 
 
 if __name__ == "__main__":
