@@ -212,16 +212,6 @@ lookup_range = {'number_density': (1.e-2, 1.e7), 'pressure': (1.e-13, 1.e-11), '
 lookup_cmap = {'number_density': 'afmhot_10us', 'pressure': 'viridis', 'density': 'magma', 'temperature': 'RdBu_r', 'normalized_angular_momentum_z':'jet', 'vr':'viridis'}
 
 def make_plots(location: str, base_ext: str, dimensions: list[str], types: list[str], window: list[tuple], start_nfile: int, stop_nfile: int, method: str, velocity_on: bool = False):
-    for dim in dimensions:
-        for plot_type in types:
-            for zoom in window:
-                contents=os.listdir(location)
-                if method == 'projection':
-                    if (f'proj,{dim},{plot_type},{zoom[0]}') not in contents:
-                        os.mkdir(location+f'proj,{dim},{plot_type},{zoom[0]}')
-                elif method == 'slice':
-                    if (f'slice,{dim},{plot_type},{zoom[0]}') not in contents:
-                        os.mkdir(location+f'slice,{dim},{plot_type},{zoom[0]}')
     
     for i in range(start_nfile,stop_nfile+1):
         ind='%05d' % (i)
@@ -243,9 +233,9 @@ def make_plots(location: str, base_ext: str, dimensions: list[str], types: list[
                         #custom projection
                         L = [0.5, 0.35, 0.3]  # vector normal to cutting plane
                         if dim == 'c':
-                            p = yt.ProjectionPlot(ds, L, ("gas", plot_type), width=zoom, buff_size=(1000,1000), weight_field=('gas',plot_type),)
-                        else: 
-                            p = yt.ProjectionPlot(ds, dim, ("gas", plot_type), width=zoom, buff_size=(1000, 1000), weight_field=('gas',plot_type),)
+                            p = yt.ProjectionPlot(ds, L, ("gas", plot_type), width=zoom, buff_size=(1500,1500), weight_field=('gas','density'),)
+                        else:
+                            p = yt.ProjectionPlot(ds, dim, ("gas", plot_type), width=zoom, buff_size=(1500, 1500), weight_field=('gas','density'))
                         p.set_unit(("gas", plot_type), lookup_units[plot_type])
                         p.set_zlim(plot_type,zmin=lookup_range[plot_type][0],zmax=lookup_range[plot_type][1]) # 1e0 to 5e6 if meso scale
                         p.set_cmap(plot_type,lookup_cmap[plot_type])
@@ -305,7 +295,7 @@ def get_multiple_snapshots(location: str, base_ext: str, dimensions: list[str], 
         items = [(location, base_ext, dimensions, types, window, k, k, method, velocity_on) for k in range(start_nfile, stop_nfile+1)]
 
         for k in enumerate(p.starmap(make_plots, items)):
-            print(f"Snapshot {k} done", flush=True)
+            print(f"Snapshot {k[0]} done", flush=True)
         
     print("All snapshots saved to " + location)
 
@@ -344,4 +334,17 @@ if __name__ == "__main__":
     print(f"Method: {method}")
     print(f"Velocity on: {velocity_on}")
 
-    make_plots(path, base_ext, dimensions, types, window, start_nfile, stop_nfile, method, velocity_on)
+    # create directories for the plots
+    for dim in dimensions:
+        for plot_type in types:
+            for zoom in window:
+                contents=os.listdir(path)
+                if method == 'projection':
+                    if (f'proj,{dim},{plot_type},{zoom[0]}') not in contents:
+                        os.mkdir(path+f'proj,{dim},{plot_type},{zoom[0]}')
+                elif method == 'slice':
+                    if (f'slice,{dim},{plot_type},{zoom[0]}') not in contents:
+                        os.mkdir(path+f'slice,{dim},{plot_type},{zoom[0]}')
+
+    # make_plots(path, base_ext, dimensions, types, window, start_nfile, stop_nfile, method, velocity_on)
+    get_multiple_snapshots(path, base_ext, dimensions, types, window, start_nfile, stop_nfile, method, velocity_on)

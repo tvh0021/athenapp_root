@@ -165,8 +165,8 @@ namespace
 
     Real newOuterBoundary;
     int zoomInStep = 0;
-    int numberOfStepsToReachNewSink, timeToReachNewSink; // how many time steps need to occur before the inner region has shrunk to the new inner radius
-    Real newInnerRadius, currentInnerRadius, d_innerRadius;
+    int numberOfStepsToReachNewSink; // how many time steps need to occur before the inner region has shrunk to the new inner radius
+    Real newInnerRadius, currentInnerRadius, d_innerRadius, timeToReachNewSink;
 
     int turbulenceType, seed;
     Real densityPerturbation, velocityPerturbationKms, velocityPerturbationAstronomical, velocityPerturbationWavelength;
