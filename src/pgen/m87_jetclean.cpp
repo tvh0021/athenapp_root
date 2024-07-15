@@ -400,8 +400,8 @@ void Mesh::InitUserMeshData(ParameterInput *pin)
         smallestCellWidth = simulationBoxWidth / numberOfZones / pow(2., numberOfRefinementLevels - 1);
         zoomInStep = ncycle;
         accretionUpdateFrequency /= (innerRadius / newInnerRadius); // update accretion rate more frequently during zoom-in
-        jetLaunchingHeight = newInnerRadius * jetLaunchingHeightScale;
-        jetLaunchingWidth = newInnerRadius * jetLaunchingWidthScale;
+        scalingFactorMDot = 10. * sqrt(gravitationalRadius / innerRadius);
+        afterGridReconstruction = false;
     }
 
     configuration = pin->GetString("comment", "configure");
@@ -1055,15 +1055,19 @@ void Mesh::UserWorkInLoop()
         {
             currentInnerRadius -= d_innerRadius * (dt * codeTime);
             numberOfStepsToReachNewSink += 1;
-            if (numberOfStepsToReachNewSink % 100 == 0)
+            if (numberOfStepsToReachNewSink % 100 == 0 && Globals::my_rank == 0)
             {
                 std::cout << "Shrink step : " << ncycle - zoomInStep << "; inner radius = " << currentInnerRadius * 1.e9 << " mpc \n";
                 std::cout << "dt = " << dt * codeTime * 1.e6 << " yr \n";
             }
+            jetLaunchingHeight = newInnerRadius * jetLaunchingHeightScale;
+            jetLaunchingWidth = newInnerRadius * jetLaunchingWidthScale;
         }
         else
         { // maybe we don't need this else statement
             currentInnerRadius = newInnerRadius;
+            jetLaunchingHeight = newInnerRadius * jetLaunchingHeightScale;
+            jetLaunchingWidth = newInnerRadius * jetLaunchingWidthScale;
         }
     }
 }
