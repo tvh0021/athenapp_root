@@ -201,6 +201,8 @@ def makeFilename (pathName : str, baseExtension : str, n : int) -> str:
         file_n = '0000' + str(n)
     elif (n >= 10) & (n < 100):
         file_n = '000' + str(n)
+    elif n >= 1000:
+        file_n = '0' + str(n)
     else:
         file_n = '00' + str(n)
 

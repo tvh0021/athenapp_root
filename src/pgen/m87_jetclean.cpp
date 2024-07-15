@@ -400,7 +400,7 @@ void Mesh::InitUserMeshData(ParameterInput *pin)
         smallestCellWidth = simulationBoxWidth / numberOfZones / pow(2., numberOfRefinementLevels - 1);
         zoomInStep = ncycle;
         accretionUpdateFrequency /= (innerRadius / newInnerRadius); // update accretion rate more frequently during zoom-in
-        scalingFactorMDot = 10. * sqrt(gravitationalRadius / innerRadius);
+        scalingFactorMDot = 10. * sqrt(gravitationalRadius / newInnerRadius);
         afterGridReconstruction = false;
     }
 
