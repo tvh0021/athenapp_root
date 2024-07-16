@@ -1091,6 +1091,7 @@ void Mesh::UserWorkAfterLoop(ParameterInput *pin)
         std::cout << "Jet base cell height = " << ruser_mesh_data[7](0) * codeLength * 1.e6 << " pc \n";
         std::cout << "Jet precession azimuthal angle = " << ruser_mesh_data[7](1) * 180. / PI << " degrees \n";
         std::cout << "Total accreted mass through r_in = " << ruser_mesh_data[3](0) * codeMass << " Msun \n";
+        std::cout << "Base mass of the inner region = " << ruser_mesh_data[0](0) * codeMass << " Msun \n";
     }
 }
 
@@ -1246,8 +1247,8 @@ void innerRadialBoundary(MeshBlock *pmb, const AthenaArray<Real> &prim,
 
         const Real cellVolumeCode = pmb->pcoord->GetCellVolume(k, j, i);
 
-        if (pmb->pmy_mesh->ncycle == 0)
-        { // at the start, record the base mass; at every time step after, record the modified mass
+        if (pmb->pmy_mesh->ncycle == 0 || (newGridFlag && pmb->pmy_mesh->ncycle == zoomInStep + 1))
+        { // at the start of the sim, or when refined, record the base mass; at every time step after, record the modified mass
             pmb->pmy_mesh->ruser_mesh_data[0](0) += primDensity * cellVolumeCode;
         }
 
