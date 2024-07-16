@@ -396,10 +396,10 @@ void Mesh::InitUserMeshData(ParameterInput *pin)
         timeToReachNewSink = pin->GetOrAddReal("restart", "t_new_sink", 0.01); // amount of time to reach the new sink radius in Myr, 1e-4 is roughly equal to the free fall time at 1pc
         newInnerRadius = pin->GetOrAddReal("restart", "r_in_new", 1.e-7);      // final inner radius of the meso-scale simulation in Mpc; M87 has rg = 140 AU or ~6e-4 pc. At 0.1 pc inner radius, this corresponds to ~200 rg's.
         // d_innerRadius = (innerRadius - newInnerRadius) / numberOfStepsToReachNewSink;  // change in inner radius per time step
-        d_innerRadius = (innerRadius - newInnerRadius) / timeToReachNewSink; // change in inner radius per unit time
+        d_innerRadius = (currentInnerRadius - newInnerRadius) / timeToReachNewSink; // change in inner radius per unit time
         smallestCellWidth = simulationBoxWidth / numberOfZones / pow(2., numberOfRefinementLevels - 1);
         zoomInStep = ncycle;
-        accretionUpdateFrequency /= (innerRadius / newInnerRadius); // update accretion rate more frequently during zoom-in
+        accretionUpdateFrequency /= (currentInnerRadius / newInnerRadius); // update accretion rate more frequently during zoom-in
         scalingFactorMDot = 10. * sqrt(gravitationalRadius / newInnerRadius);
         afterGridReconstruction = false;
     }
@@ -554,7 +554,7 @@ void Mesh::InitUserMeshData(ParameterInput *pin)
         std::cout << "Gravitational radius = " << gravitationalRadius * 1.e9 << " mpc \n";
         std::cout << "\n";
 
-        std::cout << "Inner radius = " << innerRadius * 1.e6 << " pc \n";
+        std::cout << "Inner radius = " << currentInnerRadius * 1.e6 << " pc \n";
         std::cout << "Dark matter radius = " << haloRadius * 1.e3 << " kpc \n";
         std::cout << "Stellar radius = " << stellarRadius * 1.e3 << " kpc \n";
         std::cout << "\n";
@@ -661,7 +661,7 @@ void Mesh::InitUserMeshData(ParameterInput *pin)
         std::cout << "Width of the smallest cell = " << smallestCellWidth * codeLength * 1.e6 << " pc \n";
         // std::cout << "Array of X starts at " << dimensionlessXArray[0] * scaledRadius * 1.e6 << " pc \n";
         // std::cout << "Array of X ends at " << dimensionlessXArray[numberOfTabulatedEntries - 1] * scaledRadius * 1.e3 << " kpc \n";
-        std::cout << "Expected mass of the inner region = " << pow(innerRadius, 3.) * densityVacuumSinkAstronomical * PI * 4. / 3. << " Msun \n";
+        std::cout << "Expected mass of the inner region = " << pow(currentInnerRadius, 3.) * densityVacuumSinkAstronomical * PI * 4. / 3. << " Msun \n";
         // std::cout << "Root refinement level = " << root_level << "\n";
         std::cout << "\n";
 
@@ -681,7 +681,7 @@ void Mesh::InitUserMeshData(ParameterInput *pin)
     // Declare global variables that need frequent updates
     AllocateRealUserMeshDataField(9);
     ruser_mesh_data[0].NewAthenaArray(1);
-    ruser_mesh_data[0](0) = 0.; // base mass inside inner region
+    ruser_mesh_data[0](0) = pow(currentInnerRadius, 3.) * densityVacuumSinkAstronomical * PI * 4. / 3. / codeMass; // base mass inside inner region
     ruser_mesh_data[1].NewAthenaArray(2);
     ruser_mesh_data[1](0) = 0.;           // cold gas
     ruser_mesh_data[1](1) = 0.;           // hot gas
@@ -1062,6 +1062,7 @@ void Mesh::UserWorkInLoop()
             }
             jetLaunchingHeight = newInnerRadius * jetLaunchingHeightScale;
             jetLaunchingWidth = newInnerRadius * jetLaunchingWidthScale;
+            ruser_mesh_data[1](0) = pow(currentInnerRadius, 3.) * densityVacuumSinkAstronomical * PI * 4. / 3. / codeMass; // update the base mass of the inner region after grid reconstruction
         }
         else
         { // maybe we don't need this else statement
@@ -1247,10 +1248,10 @@ void innerRadialBoundary(MeshBlock *pmb, const AthenaArray<Real> &prim,
 
         const Real cellVolumeCode = pmb->pcoord->GetCellVolume(k, j, i);
 
-        if (pmb->pmy_mesh->ncycle == 0 || (newGridFlag && pmb->pmy_mesh->ncycle == zoomInStep + 1))
-        { // at the start of the sim, or when refined, record the base mass; at every time step after, record the modified mass
-            pmb->pmy_mesh->ruser_mesh_data[0](0) += primDensity * cellVolumeCode;
-        }
+        // if (pmb->pmy_mesh->ncycle == 0 || (newGridFlag && pmb->pmy_mesh->ncycle == zoomInStep + 1))
+        // { // at the start of the sim, or when refined, record the base mass; at every time step after, record the modified mass
+        //     pmb->pmy_mesh->ruser_mesh_data[0](0) += primDensity * cellVolumeCode;
+        // }
 
         if (conservedTemperatureCode <= accretionMaxTemperature / codeTemperature)
         {
