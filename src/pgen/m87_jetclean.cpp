@@ -1062,13 +1062,14 @@ void Mesh::UserWorkInLoop()
             }
             jetLaunchingHeight = newInnerRadius * jetLaunchingHeightScale;
             jetLaunchingWidth = newInnerRadius * jetLaunchingWidthScale;
-            ruser_mesh_data[1](0) = pow(currentInnerRadius, 3.) * densityVacuumSinkAstronomical * PI * 4. / 3. / codeMass; // update the base mass of the inner region after grid reconstruction
+            ruser_mesh_data[0](0) = pow(currentInnerRadius, 3.) * densityVacuumSinkAstronomical * PI * 4. / 3. / codeMass; // update the base mass of the inner region after grid reconstruction
         }
         else
         { // maybe we don't need this else statement
             currentInnerRadius = newInnerRadius;
             jetLaunchingHeight = newInnerRadius * jetLaunchingHeightScale;
             jetLaunchingWidth = newInnerRadius * jetLaunchingWidthScale;
+            ruser_mesh_data[0](0) = pow(newInnerRadius, 3.) * densityVacuumSinkAstronomical * PI * 4. / 3. / codeMass; // update the base mass of the inner region after grid reconstruction
         }
     }
 }
