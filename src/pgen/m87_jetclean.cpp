@@ -1040,7 +1040,7 @@ void Mesh::UserWorkInLoop()
     ruser_mesh_data[1](1) = 0.; // reset mass accreted for next time step
 
     // this part is for shrinking the inner region and flip a flag to increase the max level of refinement
-    if (newGridFlag)
+    if (newGridFlag && numberOfRefinementLevels != ruser_mesh_data[8](0))
     {
         afterGridReconstruction = true; // after changing the inner region, flip this flag to start refining the grid
 
@@ -1071,6 +1071,19 @@ void Mesh::UserWorkInLoop()
             jetLaunchingWidth = newInnerRadius * jetLaunchingWidthScale;
             ruser_mesh_data[0](0) = pow(newInnerRadius, 3.) * densityVacuumSinkAstronomical * PI * 4. / 3. / codeMass; // update the base mass of the inner region after grid reconstruction
         }
+    }
+    else if (newGridFlag && numberOfRefinementLevels == ruser_mesh_data[8](0))
+    {
+        if (ncycle == zoomInStep + 1 && Globals::my_rank == 0)
+        {
+            std::cout << "Grid has already been reconstructed, keeping the same refinement level" << "\n";
+            std::cout << "Maximum refinement level = " << numberOfRefinementLevels << "\n";
+        }
+        afterGridReconstruction = true; // after changing the inner region, flip this flag to start refining the grid
+        currentInnerRadius = newInnerRadius;
+        jetLaunchingHeight = newInnerRadius * jetLaunchingHeightScale;
+        jetLaunchingWidth = newInnerRadius * jetLaunchingWidthScale;
+        ruser_mesh_data[0](0) = pow(newInnerRadius, 3.) * densityVacuumSinkAstronomical * PI * 4. / 3. / codeMass; // update the base mass of the inner region after grid reconstruction
     }
 }
 
