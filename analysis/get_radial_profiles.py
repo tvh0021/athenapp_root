@@ -217,6 +217,7 @@ def get_radial_data(location : str, base_ext : str, i : int, fields : list[str],
     """
 
     ds = yt.load(makeFilename(location, base_ext, i),units_override=units_override)
+    time = ds.current_time.in_units("kyr").value
 
     sp0 = ds.sphere("c", maxR)
     rp0 = yt.create_profile(
@@ -233,7 +234,7 @@ def get_radial_data(location : str, base_ext : str, i : int, fields : list[str],
     for i, field in enumerate(fields):
         save_data[i+1] = rp0[field].in_units(units[i]).value
 
-    return save_data
+    return (time, save_data)
 
 def get_multiple_snapshots(location: str, base_ext: str, fields : list[str], start_nfile: int, stop_nfile: int, maxR: float, units: list[str]):
     """With multiprocessing, generate multiple snapshots of the simulation data at once and save them to the specified location
@@ -250,13 +251,14 @@ def get_multiple_snapshots(location: str, base_ext: str, fields : list[str], sta
     """
     print("Saving snapshots using {} cores".format(cpu_count()), flush=True)
 
-    total_data_save = {}
+    keys = 'radius' + fields
+    total_data_save = [keys]
 
     with Pool() as p:
         items = [(location, base_ext, k, fields, maxR, units) for k in range(start_nfile, stop_nfile+1)]
 
         for k in enumerate(p.starmap(get_radial_data, items)):
-            total_data_save[k[0]] = k[1]
+            total_data_save.append(k[1])
             print(f"Snapshot {k[0]} done", flush=True)
     
     return total_data_save
@@ -290,15 +292,15 @@ def main():
                     'angular_momentum_z':'km**2/s',}
     
     parser = argparse.ArgumentParser(description="Extract data from the output of the simulation")
-    parser.add_argument("path", type=str, default=os.getcwd(), help="Path to the simulation output")
-    parser.add_argument("--fields", type=str, nargs='+', action="store", help='Fields to extract')
-    parser.add_argument('--base_ext', type=str, help='base extension of the simulation data')
-    parser.add_argument('--snapshots', type=int, nargs='+', action="store", help='range of snapshots (start, end)')
-    parser.add_argument('--maxR', type=float, default=1.e5, help='Maximum radius to extract radial profiles, in pc')
+    parser.add_argument("--path", dest="path", type=str, default=os.getcwd(), help="Path to the simulation output")
+    parser.add_argument("--fields", dest="fields", type=str, nargs='+', action="store", help='Fields to extract')
+    parser.add_argument('--base_ext', dest="base_ext", type=str, help='base extension of the simulation data')
+    parser.add_argument('--snapshots', dest="snapshots", type=int, nargs='+', action="store", help='range of snapshots (start, end)')
+    parser.add_argument('--maxR', dest="maxR", type=float, default=1.e5, help='Maximum radius to extract radial profiles, in pc', required=False)
 
     args = parser.parse_args()
 
-    path = args.path
+    path = args.path + '/'
     fields = args.fields
     base_ext = args.base_ext
     (start_nfile, stop_nfile) = args.snapshots
