@@ -346,11 +346,17 @@ def get_multiple_mdots(location: str, base_ext: str, start_nfile: int, stop_nfil
     Returns:
         dict: dictionary containing the radial profiles
     """
-    print("Saving snapshots using {} cores".format(cpu_count()), flush=True)
+
+    number_of_processes = cpu_count()
+    if number_of_processes > 30:
+        print("More than 20 cores is available but might run out of memory", flush=True)
+        number_of_processes = 30
+        
+    print("Saving snapshots using {} cores".format(number_of_processes), flush=True)
 
     total_data_save = {}
 
-    with Pool() as p:
+    with Pool(processes=number_of_processes) as p:
         items = [(location, base_ext, k, distances) for k in range(start_nfile, stop_nfile+1)]
 
         for k in enumerate(p.starmap(get_m_dot, items)):
