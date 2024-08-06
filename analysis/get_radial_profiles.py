@@ -202,7 +202,7 @@ def makeFilename (pathName : str, baseExtension : str, n : int) -> str:
     return f"{pathName}{baseExtension}{file_n}.athdf"
 
 
-def GetFlux(ds : yt.frontends.athena_pp.AthenaPPDataset, shell : yt.data_objects.selection_objects.cut_region.YTCutRegion):
+def GetFlux(shell : yt.data_objects.selection_objects.cut_region.YTCutRegion):
     # flux_all = shell["gas", "vr"] * shell["gas", "density"]
     rv = shell["gas", "vr"]
     rho = shell["gas", "density"]
@@ -214,18 +214,18 @@ def GetFlux(ds : yt.frontends.athena_pp.AthenaPPDataset, shell : yt.data_objects
     flux_out_cold = np.zeros_like(rv)
     flux_out_hot = np.zeros_like(rv)
 
-    flux_in_cold = np.where((temp < 1.e6) & (rv < 0), -flux_all.in_units("Msun/pc**2/yr"), 0.)
-    flux_in_hot = np.where((temp >= 1.e6) & (rv < 0), -flux_all.in_units("Msun/pc**2/yr"), 0.)
+    flux_in_cold = np.where((temp < 1.e6) & (rv < 0), -flux_all.in_units("Msun/pc**2/yr").value, 0.)
+    flux_in_hot = np.where((temp >= 1.e6) & (rv < 0), -flux_all.in_units("Msun/pc**2/yr").value, 0.)
 
-    flux_out_cold = np.where((temp < 1.e6) & (rv > 0), flux_all.in_units("Msun/pc**2/yr"), 0.)
-    flux_out_hot = np.where((temp >= 1.e6) & (rv > 0), flux_all.in_units("Msun/pc**2/yr"), 0.)
+    flux_out_cold = np.where((temp < 1.e6) & (rv > 0), flux_all.in_units("Msun/pc**2/yr").value, 0.)
+    flux_out_hot = np.where((temp >= 1.e6) & (rv > 0), flux_all.in_units("Msun/pc**2/yr").value, 0.)
 
     return [flux_in_cold, flux_in_hot, flux_out_cold, flux_out_hot]
 
 def GetMassFlow(flux : np.ndarray, radius : float):
     return np.mean(flux) * 4 * np.pi * radius**2
 
-def GetSphericalShell(ds : yt.frontends.athena_pp.AthenaPPDataset, radius : float, width_tolerance : float, unit : str) -> yt.data_objects.selection_objects.cut_region.YTCutRegion:
+def GetSphericalShell(ds, radius : float, width_tolerance : float, unit : str) -> yt.data_objects.selection_objects.cut_region.YTCutRegion:
     sphere = ds.sphere("c", (radius, unit))
     shell = sphere.cut_region([f"(obj['radius'].in_units('{unit}') > {radius - width_tolerance})"])
     
