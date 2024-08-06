@@ -348,9 +348,9 @@ def get_multiple_mdots(location: str, base_ext: str, start_nfile: int, stop_nfil
     """
 
     number_of_processes = cpu_count()
-    if number_of_processes > 30:
+    if number_of_processes > 20:
         print("More than 20 cores is available but might run out of memory", flush=True)
-        number_of_processes = 30
+        number_of_processes = 20
         
     print("Saving snapshots using {} cores".format(number_of_processes), flush=True)
 
