@@ -251,7 +251,7 @@ def get_m_dot(location : str, base_ext : str, i : int, distances : np.ndarray):
 
     for i, radius in enumerate(distances):
         shell = GetSphericalShell(ds, radius, radius * 0.07, "pc")
-        flux_in_cold, flux_in_hot, flux_out_cold, flux_out_hot = GetFlux(ds, shell)
+        flux_in_cold, flux_in_hot, flux_out_cold, flux_out_hot = GetFlux(shell)
 
         save_data[i,1] = GetMassFlow(flux_in_cold, radius)
         save_data[i,2] = GetMassFlow(flux_in_hot, radius)
