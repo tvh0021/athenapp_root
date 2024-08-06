@@ -201,7 +201,67 @@ def makeFilename (pathName : str, baseExtension : str, n : int) -> str:
 
     return f"{pathName}{baseExtension}{file_n}.athdf"
 
-def get_radial_data(location : str, base_ext : str, i : int, fields : list[str], maxR : float, units : list[str]) -> np.ndarray:
+
+def GetFlux(ds : yt.frontends.athena_pp.AthenaPPDataset, shell : yt.data_objects.selection_objects.cut_region.YTCutRegion):
+    # flux_all = shell["gas", "vr"] * shell["gas", "density"]
+    rv = shell["gas", "vr"]
+    rho = shell["gas", "density"]
+    flux_all = rv * rho
+    temp = shell["gas", "temperature"].in_units("K")
+
+    flux_in_cold = np.zeros_like(rv)
+    flux_in_hot = np.zeros_like(rv)
+    flux_out_cold = np.zeros_like(rv)
+    flux_out_hot = np.zeros_like(rv)
+
+    flux_in_cold = np.where((temp < 1.e6) & (rv < 0), -flux_all.in_units("Msun/pc**2/yr"), 0.)
+    flux_in_hot = np.where((temp >= 1.e6) & (rv < 0), -flux_all.in_units("Msun/pc**2/yr"), 0.)
+
+    flux_out_cold = np.where((temp < 1.e6) & (rv > 0), flux_all.in_units("Msun/pc**2/yr"), 0.)
+    flux_out_hot = np.where((temp >= 1.e6) & (rv > 0), flux_all.in_units("Msun/pc**2/yr"), 0.)
+
+    return [flux_in_cold, flux_in_hot, flux_out_cold, flux_out_hot]
+
+def GetMassFlow(flux : np.ndarray, radius : float):
+    return np.mean(flux) * 4 * np.pi * radius**2
+
+def GetSphericalShell(ds : yt.frontends.athena_pp.AthenaPPDataset, radius : float, width_tolerance : float, unit : str) -> yt.data_objects.selection_objects.cut_region.YTCutRegion:
+    sphere = ds.sphere("c", (radius, unit))
+    shell = sphere.cut_region([f"(obj['radius'].in_units('{unit}') > {radius - width_tolerance})"])
+    
+    return shell
+
+def get_m_dot(location : str, base_ext : str, i : int, distances : np.ndarray):
+    """From a dataset, extract the mass flow rates at different radii
+
+    Args:
+        location (str): path to the simulation data
+        base_ext (str): base extension of the snapshot files
+        i (int): snapshot number
+        distances (np.ndarray): array of radii to extract mass flow rates
+
+    Returns:
+        tuple: (time, mass flow rates)
+    """
+    ds = yt.load(makeFilename(location, base_ext, i),units_override=units_override)
+    time = float(ds.current_time.in_units("kyr").value)
+    
+    save_data = np.zeros((len(distances), 5))
+    save_data[:,0] = distances
+
+    for i, radius in enumerate(distances):
+        shell = GetSphericalShell(ds, radius, radius * 0.07, "pc")
+        flux_in_cold, flux_in_hot, flux_out_cold, flux_out_hot = GetFlux(ds, shell)
+
+        save_data[i,1] = GetMassFlow(flux_in_cold, radius)
+        save_data[i,2] = GetMassFlow(flux_in_hot, radius)
+        save_data[i,3] = GetMassFlow(flux_out_cold, radius)
+        save_data[i,4] = GetMassFlow(flux_out_hot, radius)
+
+    return (time, save_data)
+    
+
+def get_radial_data(location : str, base_ext : str, i : int, fields : list[str], maxR : float, minR : float, n_bins : int, units : list[str]):
     """From a dataset, extract the radial profiles
 
     Args:
@@ -210,20 +270,23 @@ def get_radial_data(location : str, base_ext : str, i : int, fields : list[str],
         i (int): snapshot number
         fields (list[str]): list of fields to extract
         maxR (float): maximum radius to extract radial profiles, in pc
+        minR (float): minimum radius to extract radial profiles, in pc
+        n_bins (int): number of bins for the radial profiles
         units (list[str]): units of the fields
-
     Returns:
-        np.ndarray: radial profiles
+        tuple: (times, radial profiles)
     """
 
     ds = yt.load(makeFilename(location, base_ext, i),units_override=units_override)
-    time = ds.current_time.in_units("kyr").value
+    time = float(ds.current_time.in_units("kyr").value)
 
     sp0 = ds.sphere("c", maxR)
     rp0 = yt.create_profile(
         sp0,
         ("index", "radius"),
         fields,
+        n_bins=n_bins,
+        extrema={("index", "radius"): (minR, maxR)},
         units={("index", "radius"): "pc"},
         logs={("index", "radius"): True},
     )
@@ -236,7 +299,7 @@ def get_radial_data(location : str, base_ext : str, i : int, fields : list[str],
 
     return (time, save_data)
 
-def get_multiple_snapshots(location: str, base_ext: str, fields : list[str], start_nfile: int, stop_nfile: int, maxR: float, units: list[str]):
+def get_multiple_snapshots(location: str, base_ext: str, fields : list[str], start_nfile: int, stop_nfile: int, maxR: float, minR: float, n_bins: int, units: list[str]):
     """With multiprocessing, generate multiple snapshots of the simulation data at once and save them to the specified location
 
     Args:
@@ -245,20 +308,55 @@ def get_multiple_snapshots(location: str, base_ext: str, fields : list[str], sta
         fields (list[str]): list of fields to extract
         start_nfile (int): starting snapshot number
         stop_nfile (int): ending snapshot number
-
+        maxR (float): maximum radius to extract radial profiles, in pc
+        minR (float): minimum radius to extract radial profiles, in pc
+        n_bins (int): number of bins for the radial profiles
+        units (list[str]): units of the fields
     Returns:
-        None: all snapshots are saved to the specified location
+        dict: dictionary containing the radial profiles
     """
     print("Saving snapshots using {} cores".format(cpu_count()), flush=True)
 
-    keys = 'radius' + fields
-    total_data_save = [keys]
+    # keys = ['radius'] + fields
+    total_data_save = {}
+    # total_data_save['fields'] = keys
 
     with Pool() as p:
-        items = [(location, base_ext, k, fields, maxR, units) for k in range(start_nfile, stop_nfile+1)]
+        items = [(location, base_ext, k, fields, maxR, minR, n_bins, units) for k in range(start_nfile, stop_nfile+1)]
 
         for k in enumerate(p.starmap(get_radial_data, items)):
-            total_data_save.append(k[1])
+            data = k[1][1]
+            time = k[1][0]
+            total_data_save[time] = data
+            print(f"Snapshot {k[0]} done", flush=True)
+    
+    return total_data_save
+
+def get_multiple_mdots(location: str, base_ext: str, start_nfile: int, stop_nfile: int, distances: np.ndarray):
+    """With multiprocessing, generate multiple snapshots of the simulation data at once and save them to the specified location
+
+    Args:
+        location (str): path to the simulation data
+        base_ext (str): base extension of the snapshot files
+        start_nfile (int): starting snapshot number
+        stop_nfile (int): ending snapshot number
+        maxR (float): maximum radius to extract radial profiles, in pc
+        minR (float): minimum radius to extract radial profiles, in pc
+        n_bins (int): number of bins for the radial profiles
+    Returns:
+        dict: dictionary containing the radial profiles
+    """
+    print("Saving snapshots using {} cores".format(cpu_count()), flush=True)
+
+    total_data_save = {}
+
+    with Pool() as p:
+        items = [(location, base_ext, k, distances) for k in range(start_nfile, stop_nfile+1)]
+
+        for k in enumerate(p.starmap(get_m_dot, items)):
+            data = k[1][1]
+            time = k[1][0]
+            total_data_save[time] = data
             print(f"Snapshot {k[0]} done", flush=True)
     
     return total_data_save
@@ -283,13 +381,18 @@ def main():
                     'normalized_specific_angular_momentum_x':'', 
                     'normalized_specific_angular_momentum_y':'', 
                     'normalized_specific_angular_momentum_z':'', 
-                    'free_fall_time':'Myr', 'free_fall_ratio':'', 
+                    'free_fall_time':'Myr', 
+                    'free_fall_ratio':'', 
                     'specific_angular_momentum_x':'km**2/s', 
                     'specific_angular_momentum_y':'km**2/s', 
                     'specific_angular_momentum_z':'km**2/s', 
                     'angular_momentum_x':'km**2/s', 
                     'angular_momentum_y':'km**2/s', 
-                    'angular_momentum_z':'km**2/s',}
+                    'angular_momentum_z':'km**2/s',
+                    'm_dot_in_cold':'Msun/yr',
+                    'm_dot_in_hot':'Msun/yr',
+                    'm_dot_out_cold':'Msun/yr',
+                    'm_dot_out_hot':'Msun/yr',}
     
     parser = argparse.ArgumentParser(description="Extract data from the output of the simulation")
     parser.add_argument("--path", dest="path", type=str, default=os.getcwd(), help="Path to the simulation output")
@@ -297,6 +400,7 @@ def main():
     parser.add_argument('--base_ext', dest="base_ext", type=str, help='base extension of the simulation data')
     parser.add_argument('--snapshots', dest="snapshots", type=int, nargs='+', action="store", help='range of snapshots (start, end)')
     parser.add_argument('--maxR', dest="maxR", type=float, default=1.e5, help='Maximum radius to extract radial profiles, in pc', required=False)
+    parser.add_argument('--minR', dest="minR", type=float, default=1., help='Minimum radius to extract radial profiles, in pc', required=False)
 
     args = parser.parse_args()
 
@@ -305,6 +409,13 @@ def main():
     base_ext = args.base_ext
     (start_nfile, stop_nfile) = args.snapshots
     maxR = args.maxR
+    minR = args.minR
+    n_bins = 80
+
+    get_m_dot = False
+    if "m_dot" in fields:
+        get_m_dot = True
+        fields.remove("m_dot")
 
     units_list = [lookup_units[field] for field in fields]
 
@@ -314,12 +425,28 @@ def main():
     print(f"Base extension: {base_ext}")
     print(f"Snapshots: from {start_nfile} to {stop_nfile}")
     print(f"Units: {units_list}")
+    print(f"Radii: from {minR} pc to {maxR} pc")
 
-    total_data = get_multiple_snapshots(path, base_ext, fields, start_nfile, stop_nfile, maxR, units_list)
+    total_data = get_multiple_snapshots(path, base_ext, fields, start_nfile, stop_nfile, maxR, minR, n_bins, units_list)
+    sorted_dict = dict(sorted(total_data.items()))
+    sorted_dict['fields'] = ['radius'] + fields
 
     # Save the data to a pickle file
     with open(f"{path}/radial_profiles.pkl", "wb") as f:
-        pickle.dump(total_data, f)
+        pickle.dump(sorted_dict, f)
+        print("Radial profiles saved to pickle file")
+
+    if get_m_dot:
+        distances = sorted_dict[list(sorted_dict.keys())[0]][0,:]
+        print("Getting mass flow rates")
+        m_dot_data = get_multiple_mdots(path, base_ext, start_nfile, stop_nfile, distances)
+        sorted_m_dot = dict(sorted(m_dot_data.items()))
+        sorted_m_dot['fields'] = ['radius', 'm_dot_in_cold', 'm_dot_in_hot', 'm_dot_out_cold', 'm_dot_out_hot']
+
+        with open(f"{path}/mass_flow_rates.pkl", "wb") as f:
+            pickle.dump(sorted_m_dot, f)
+            print("Mass flow rates saved to pickle file")
+    
 
 if __name__ == "__main__":
     main()
