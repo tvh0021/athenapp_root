@@ -246,17 +246,17 @@ def get_m_dot(location : str, base_ext : str, i : int, distances : np.ndarray):
     ds = yt.load(makeFilename(location, base_ext, i),units_override=units_override)
     time = float(ds.current_time.in_units("kyr").value)
     
-    save_data = np.zeros((len(distances), 5))
-    save_data[:,0] = distances
+    save_data = np.zeros((5, len(distances)))
+    save_data[0] = distances
 
     for i, radius in enumerate(distances):
         shell = GetSphericalShell(ds, radius, radius * 0.07, "pc")
         flux_in_cold, flux_in_hot, flux_out_cold, flux_out_hot = GetFlux(shell)
 
-        save_data[i,1] = GetMassFlow(flux_in_cold, radius)
-        save_data[i,2] = GetMassFlow(flux_in_hot, radius)
-        save_data[i,3] = GetMassFlow(flux_out_cold, radius)
-        save_data[i,4] = GetMassFlow(flux_out_hot, radius)
+        save_data[1,i] = GetMassFlow(flux_in_cold, radius)
+        save_data[2,i] = GetMassFlow(flux_in_hot, radius)
+        save_data[3,i] = GetMassFlow(flux_out_cold, radius)
+        save_data[4,i] = GetMassFlow(flux_out_hot, radius)
 
     return (time, save_data)
     
