@@ -155,6 +155,7 @@ namespace
     Real coolingStartTime, jetStartTime;
     Real accretionUpdateFrequency, accretionMaxTemperature; // update accretion rate (aka jet power) every n Myr, set maximum temperature of gas that is counted toward accretion
     Real amrTimeOn;
+    int maxRefinementLevelForJet;
 
     Real simulationBoxWidth, numberOfMeshBlocks, numberOfZones, smallestCellWidth;
     bool outputJetSpecial = false;
@@ -362,9 +363,10 @@ void Mesh::InitUserMeshData(ParameterInput *pin)
         outputJetSpecial = true;
     }
 
-    jetPrecessionAngleTheta = pin->GetOrAddReal("jet", "a_precess", 15.); // jet precession angle in degrees
-    jetPrecessionAngleTheta *= PI / 180.;                                 // convert to radians
-    jetPrecessionPeriod = pin->GetOrAddReal("jet", "t_precess", 10.);     // frequency of changing precession angle in Myr
+    jetPrecessionAngleTheta = pin->GetOrAddReal("jet", "a_precess", 15.);   // jet precession angle in degrees
+    jetPrecessionAngleTheta *= PI / 180.;                                   // convert to radians
+    jetPrecessionPeriod = pin->GetOrAddReal("jet", "t_precess", 10.);       // frequency of changing precession angle in Myr
+    maxRefinementLevelForJet = pin->GetOrAddInteger("jet", "refine_m", 14); // maximum refinement level before jet feedback is turned off
 
     seed = 1;                                                    // some random seeding for random generator, doesn't matter what the actual value is
     turbulenceType = pin->GetInteger("turbulence", "turb_type"); // 0 for density perturbation, 1 for velocity perturbation
@@ -570,8 +572,16 @@ void Mesh::InitUserMeshData(ParameterInput *pin)
         std::cout << "Cooling is ON"
                   << "\n";
 
-        std::cout << "Jet feedback is ON"
-                  << "\n";
+        if (numberOfRefinementLevels > maxRefinementLevelForJet)
+        {
+            std::cout << "Jet feedback is OFF, " << maxRefinementLevelForJet << " refinement levels exceeded"
+                      << "\n";
+        }
+        else
+        {
+            std::cout << "Jet feedback is ON"
+                      << "\n";
+        }
         if (turbulenceType == 0)
         {
             std::cout << "Turbulent density perturbation is ON"
@@ -627,26 +637,29 @@ void Mesh::InitUserMeshData(ParameterInput *pin)
         std::cout << "Cooling start time = " << coolingStartTime << " Myr \n";
         std::cout << "\n";
 
-        std::cout << "----AGN JET FEEDBACK----"
-                  << "\n";
-        std::cout << "Jet start time = " << jetStartTime << " Myr \n";
-        if (outputJetSpecial)
+        if (numberOfRefinementLevels <= maxRefinementLevelForJet)
         {
-            std::cout << "Jet start time delay enforced. Set t_jet >= m_upd \n";
-            outputJetSpecial = false;
+            std::cout << "----AGN JET FEEDBACK----"
+                      << "\n";
+            std::cout << "Jet start time = " << jetStartTime << " Myr \n";
+            if (outputJetSpecial)
+            {
+                std::cout << "Jet start time delay enforced. Set t_jet >= m_upd \n";
+                outputJetSpecial = false;
+            }
+            std::cout << "Jet launch height = " << jetLaunchingHeight * 1.e6 << " pc \n";
+            std::cout << "Jet base radius = " << jetLaunchingWidth * 1.e6 << " pc \n";
+            std::cout << "Jet velocity = " << jetVelocityKms << " km s^-1 \n";
+            std::cout << "Jet conversion efficiency = " << jetConversionEfficiency << "\n";
+            std::cout << "Jet kinetic fraction = " << jetKineticFraction << "\n";
+            std::cout << "M_dot updates frequency = " << accretionUpdateFrequency << " Myr \n";
+            std::cout << "Jet profile is Gaussian \n";
+            std::cout << "Jet precession is ON"
+                      << "\n";
+            std::cout << "Precession polar angle = " << jetPrecessionAngleTheta * 180. / PI << " degrees \n";
+            std::cout << "Period of precession = " << jetPrecessionPeriod << " Myr \n";
+            std::cout << "\n";
         }
-        std::cout << "Jet launch height = " << jetLaunchingHeight * 1.e6 << " pc \n";
-        std::cout << "Jet base radius = " << jetLaunchingWidth * 1.e6 << " pc \n";
-        std::cout << "Jet velocity = " << jetVelocityKms << " km s^-1 \n";
-        std::cout << "Jet conversion efficiency = " << jetConversionEfficiency << "\n";
-        std::cout << "Jet kinetic fraction = " << jetKineticFraction << "\n";
-        std::cout << "M_dot updates frequency = " << accretionUpdateFrequency << " Myr \n";
-        std::cout << "Jet profile is Gaussian \n";
-        std::cout << "Jet precession is ON"
-                  << "\n";
-        std::cout << "Precession polar angle = " << jetPrecessionAngleTheta * 180. / PI << " degrees \n";
-        std::cout << "Period of precession = " << jetPrecessionPeriod << " Myr \n";
-        std::cout << "\n";
 
         std::cout << "----FLOOR VALUES----"
                   << "\n";
@@ -1334,7 +1347,7 @@ void allSourceFunctions(MeshBlock *pmb, const Real time, const Real dt,
                     // END ENFORCE TEMPERATURE AND DENSITY FLOOR
 
                     // JET FEEDBACK
-                    if (time > jetStartTime / codeTime && polarDistance <= jetLaunchingWidth / codeLength && r < 2 * jetLaunchingHeight / codeLength && numberOfRefinementLevels < 14) // apply jet feedback only to the regions close to the jet platform
+                    if (time > jetStartTime / codeTime && polarDistance <= jetLaunchingWidth / codeLength && r < 2 * jetLaunchingHeight / codeLength && numberOfRefinementLevels <= maxRefinementLevelForJet) // apply jet feedback only to the regions close to the jet platform
                     {
                         jetFeedbackSourceFunction(pmb, cons, prim, k, j, i, dt, z, y, x, polarDistance);
                     }
