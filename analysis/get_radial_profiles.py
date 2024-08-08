@@ -261,7 +261,7 @@ def get_m_dot(location : str, base_ext : str, i : int, distances : np.ndarray):
     return (time, save_data)
     
 
-def get_radial_data(location : str, base_ext : str, i : int, fields : list[str], maxR : float, minR : float, n_bins : int, units : list[str]):
+def get_radial_data(location : str, base_ext : str, i : int, fields : list[str], maxR : float, minR : float, n_bins : int, units : list[str], temp_sep : bool = True):
     """From a dataset, extract the radial profiles
 
     Args:
@@ -273,6 +273,7 @@ def get_radial_data(location : str, base_ext : str, i : int, fields : list[str],
         minR (float): minimum radius to extract radial profiles, in pc
         n_bins (int): number of bins for the radial profiles
         units (list[str]): units of the fields
+        temp_sep (bool): separate the temperature into cold and hot components
     Returns:
         tuple: (times, radial profiles)
     """
@@ -281,25 +282,54 @@ def get_radial_data(location : str, base_ext : str, i : int, fields : list[str],
     time = float(ds.current_time.in_units("kyr").value)
 
     sp0 = ds.sphere("c", maxR)
-    rp0 = yt.create_profile(
-        sp0,
-        ("index", "radius"),
-        fields,
-        n_bins=n_bins,
-        extrema={("index", "radius"): (minR, maxR)},
-        units={("index", "radius"): "pc"},
-        logs={("index", "radius"): True},
-    )
 
-    save_data = np.zeros((len(fields)+1, len(rp0.x)))
-    save_data[0] = rp0.x.in_units("pc").value
+    if temp_sep:
+        sp_cold = sp0.cut_region(["(obj['temperature'].in_units('K') < 1.e6)"])
+        sp_hot = sp0.cut_region(["(obj['temperature'].in_units('K') >= 1.e6)"])
 
-    for i, field in enumerate(fields):
-        save_data[i+1] = rp0[field].in_units(units[i]).value
+        rp_cold = yt.create_profile(
+            sp_cold,
+            ("index", "radius"),
+            fields,
+            n_bins=n_bins,
+            extrema={("index", "radius"): (minR, maxR)},
+            units={("index", "radius"): "pc"},
+            logs={("index", "radius"): True},
+        )
+        rp_hot = yt.create_profile(
+            sp_hot,
+            ("index", "radius"),
+            fields,
+            n_bins=n_bins,
+            extrema={("index", "radius"): (minR, maxR)},
+            units={("index", "radius"): "pc"},
+            logs={("index", "radius"): True},
+        )
+        save_data = np.zeros((len(fields)*2+1, len(rp_cold.x)))
+        save_data[0] = rp_cold.x.in_units("pc").value
+
+        for i, field in enumerate(fields):
+            save_data[i+1] = rp_cold[field].in_units(units[i]).value
+            save_data[i+len(fields)+1] = rp_hot[field].in_units(units[i]).value
+    else:
+        rp0 = yt.create_profile(
+            sp0,
+            ("index", "radius"),
+            fields,
+            n_bins=n_bins,
+            extrema={("index", "radius"): (minR, maxR)},
+            units={("index", "radius"): "pc"},
+            logs={("index", "radius"): True},
+        )
+        save_data = np.zeros((len(fields)+1, len(rp0.x)))
+        save_data[0] = rp0.x.in_units("pc").value
+
+        for i, field in enumerate(fields):
+            save_data[i+1] = rp0[field].in_units(units[i]).value
 
     return (time, save_data)
 
-def get_multiple_snapshots(location: str, base_ext: str, fields : list[str], start_nfile: int, stop_nfile: int, maxR: float, minR: float, n_bins: int, units: list[str]):
+def get_multiple_snapshots(location: str, base_ext: str, fields : list[str], start_nfile: int, stop_nfile: int, maxR: float, minR: float, n_bins: int, units: list[str], temp_sep: bool = True):
     """With multiprocessing, generate multiple snapshots of the simulation data at once and save them to the specified location
 
     Args:
@@ -312,6 +342,7 @@ def get_multiple_snapshots(location: str, base_ext: str, fields : list[str], sta
         minR (float): minimum radius to extract radial profiles, in pc
         n_bins (int): number of bins for the radial profiles
         units (list[str]): units of the fields
+        temp_sep (bool): separate the temperature into cold and hot components
     Returns:
         dict: dictionary containing the radial profiles
     """
@@ -322,7 +353,7 @@ def get_multiple_snapshots(location: str, base_ext: str, fields : list[str], sta
     # total_data_save['fields'] = keys
 
     with Pool() as p:
-        items = [(location, base_ext, k, fields, maxR, minR, n_bins, units) for k in range(start_nfile, stop_nfile+1)]
+        items = [(location, base_ext, k, fields, maxR, minR, n_bins, units, temp_sep) for k in range(start_nfile, stop_nfile+1)]
 
         for k in enumerate(p.starmap(get_radial_data, items)):
             data = k[1][1]
@@ -407,6 +438,8 @@ def main():
     parser.add_argument('--snapshots', dest="snapshots", type=int, nargs='+', action="store", help='range of snapshots (start, end)')
     parser.add_argument('--maxR', dest="maxR", type=float, default=1.e5, help='Maximum radius to extract radial profiles, in pc', required=False)
     parser.add_argument('--minR', dest="minR", type=float, default=1., help='Minimum radius to extract radial profiles, in pc', required=False)
+    parser.add_argument('--n_bins', dest="n_bins", type=int, default=80, help='Number of bins for the radial profiles', required=False)
+    parser.add_argument('--temp_sep', dest="temp_sep", action="store_true", help='Separate the temperature into cold and hot components')
 
     args = parser.parse_args()
 
@@ -416,7 +449,8 @@ def main():
     (start_nfile, stop_nfile) = args.snapshots
     maxR = args.maxR
     minR = args.minR
-    n_bins = 80
+    n_bins = args.n_bins
+    temp_sep = args.temp_sep
 
     get_m_dot = False
     if "m_dot" in fields:
@@ -432,10 +466,17 @@ def main():
     print(f"Snapshots: from {start_nfile} to {stop_nfile}")
     print(f"Units: {units_list}")
     print(f"Radii: from {minR} pc to {maxR} pc")
+    print(f"Number of bins: {n_bins}")
+    print(f"Separate temperature: {temp_sep}")
 
-    total_data = get_multiple_snapshots(path, base_ext, fields, start_nfile, stop_nfile, maxR, minR, n_bins, units_list)
+    total_data = get_multiple_snapshots(path, base_ext, fields, start_nfile, stop_nfile, maxR, minR, n_bins, units_list, temp_sep)
     sorted_dict = dict(sorted(total_data.items()))
-    sorted_dict['fields'] = ['radius'] + fields
+
+    if temp_sep:
+        print_fields = [field+'_cold' for field in fields] + [field+'_hot' for field in fields]
+        sorted_dict['fields'] = ['radius'] + print_fields
+    else:
+        sorted_dict['fields'] = ['radius'] + fields
 
     # Save the data to a pickle file
     with open(f"{path}/radial_profiles.pkl", "wb") as f:
