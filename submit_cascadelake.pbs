@@ -1,0 +1,15 @@
+#PBS -S /bin/zsh
+#PBS -l select=8:ncpus=39:mpiprocs=39:model=cas_ait
+#PBS -l walltime=08:00:00
+#PBS -q normal
+#PBS -m abe
+#PBS -M trungha@my.unt.edu
+#PBS -N M87_10smr-f0.8
+
+source /usr/local/lib/global.profile
+module load nas comp-intel/2020.4.304 mpi-hpe/mpt hdf5/1.8.18_mpt
+module list
+
+cd $PBS_O_WORKDIR
+
+mpiexec -n 312 ~/athenapp_root/bin/athena -i athinput.m87-smr -r M87.920Myr.rst -t 07:58:00
