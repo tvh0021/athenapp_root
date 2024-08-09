@@ -261,7 +261,7 @@ def get_m_dot(location : str, base_ext : str, i : int, distances : np.ndarray):
     return (time, save_data)
     
 
-def get_radial_data(location : str, base_ext : str, i : int, fields : list[str], maxR : float, minR : float, n_bins : int, units : list[str], temp_sep : bool = True):
+def get_radial_data(location : str, base_ext : str, i : int, fields : list[str], maxR : float, minR : float, n_bins : int, units : list[str], temp_sep : bool = True, weight_field : str = "mass"):
     """From a dataset, extract the radial profiles
 
     Args:
@@ -274,6 +274,7 @@ def get_radial_data(location : str, base_ext : str, i : int, fields : list[str],
         n_bins (int): number of bins for the radial profiles
         units (list[str]): units of the fields
         temp_sep (bool): separate the temperature into cold and hot components
+        weight_field (str): field to use as weight for the radial profiles, default is "mass"
     Returns:
         tuple: (times, radial profiles)
     """
@@ -292,6 +293,7 @@ def get_radial_data(location : str, base_ext : str, i : int, fields : list[str],
             ("index", "radius"),
             fields,
             n_bins=n_bins,
+            weight_field=weight_field,
             extrema={("index", "radius"): (minR, maxR)},
             units={("index", "radius"): "pc"},
             logs={("index", "radius"): True},
@@ -301,6 +303,7 @@ def get_radial_data(location : str, base_ext : str, i : int, fields : list[str],
             ("index", "radius"),
             fields,
             n_bins=n_bins,
+            weight_field=weight_field,
             extrema={("index", "radius"): (minR, maxR)},
             units={("index", "radius"): "pc"},
             logs={("index", "radius"): True},
@@ -317,6 +320,7 @@ def get_radial_data(location : str, base_ext : str, i : int, fields : list[str],
             ("index", "radius"),
             fields,
             n_bins=n_bins,
+            weight_field=weight_field,
             extrema={("index", "radius"): (minR, maxR)},
             units={("index", "radius"): "pc"},
             logs={("index", "radius"): True},
@@ -329,7 +333,7 @@ def get_radial_data(location : str, base_ext : str, i : int, fields : list[str],
 
     return (time, save_data)
 
-def get_multiple_snapshots(location: str, base_ext: str, fields : list[str], start_nfile: int, stop_nfile: int, maxR: float, minR: float, n_bins: int, units: list[str], temp_sep: bool = True):
+def get_multiple_snapshots(location: str, base_ext: str, fields : list[str], start_nfile: int, stop_nfile: int, maxR: float, minR: float, n_bins: int, units: list[str], temp_sep: bool = True, weight_field : str = "mass"):
     """With multiprocessing, generate multiple snapshots of the simulation data at once and save them to the specified location
 
     Args:
@@ -343,6 +347,7 @@ def get_multiple_snapshots(location: str, base_ext: str, fields : list[str], sta
         n_bins (int): number of bins for the radial profiles
         units (list[str]): units of the fields
         temp_sep (bool): separate the temperature into cold and hot components
+        weight_field (str): field to use as weight for the radial profiles, default is "mass"
     Returns:
         dict: dictionary containing the radial profiles
     """
@@ -353,7 +358,7 @@ def get_multiple_snapshots(location: str, base_ext: str, fields : list[str], sta
     # total_data_save['fields'] = keys
 
     with Pool() as p:
-        items = [(location, base_ext, k, fields, maxR, minR, n_bins, units, temp_sep) for k in range(start_nfile, stop_nfile+1)]
+        items = [(location, base_ext, k, fields, maxR, minR, n_bins, units, temp_sep, weight_field) for k in range(start_nfile, stop_nfile+1)]
 
         for k in enumerate(p.starmap(get_radial_data, items)):
             data = k[1][1]
@@ -440,6 +445,7 @@ def main():
     parser.add_argument('--minR', dest="minR", type=float, default=1., help='Minimum radius to extract radial profiles, in pc', required=False)
     parser.add_argument('--n_bins', dest="n_bins", type=int, default=80, help='Number of bins for the radial profiles', required=False)
     parser.add_argument('--temp_sep', dest="temp_sep", action="store_true", help='Separate the temperature into cold and hot components')
+    parser.add_argument('--weight', dest="weight", type=str, default="mass", help="Field to use as weight for the radial profiles, 'mass', 'volume', or None", required=False)
 
     args = parser.parse_args()
 
@@ -451,11 +457,15 @@ def main():
     minR = args.minR
     n_bins = args.n_bins
     temp_sep = args.temp_sep
+    weight_field = args.weight
 
     get_m_dot = False
     if "m_dot" in fields:
         get_m_dot = True
         fields.remove("m_dot")
+
+    if weight_field == "None":
+        weight_field = None
 
     units_list = [lookup_units[field] for field in fields]
 
@@ -468,8 +478,9 @@ def main():
     print(f"Radii: from {minR} pc to {maxR} pc")
     print(f"Number of bins: {n_bins}")
     print(f"Separate temperature: {temp_sep}")
+    print(f"Weighted average based on : {weight_field}")
 
-    total_data = get_multiple_snapshots(path, base_ext, fields, start_nfile, stop_nfile, maxR, minR, n_bins, units_list, temp_sep)
+    total_data = get_multiple_snapshots(path, base_ext, fields, start_nfile, stop_nfile, maxR, minR, n_bins, units_list, temp_sep, weight_field)
     sorted_dict = dict(sorted(total_data.items()))
 
     if temp_sep:
@@ -479,7 +490,7 @@ def main():
         sorted_dict['fields'] = ['radius'] + fields
 
     # Save the data to a pickle file
-    with open(f"{path}/radial_profiles.pkl", "wb") as f:
+    with open(f"{path}/radial_profiles_w{weight_field}.pkl", "wb") as f:
         pickle.dump(sorted_dict, f)
         print("Radial profiles saved to pickle file")
 
