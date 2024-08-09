@@ -1,7 +1,7 @@
 ## By Trung Ha, 2024
 ## This file is used to generate videos of the simulation data
-## Example command: python ~/git_repos/athenapp_root/analysis/get_plots.py --path "/scratch/08520/trungha/M87/galaxy-scale/product_f0.9_rf50Myr/" 
-## --base_ext "M87.out2." --snapshots 50 500 --window 0.5 5 50 --dimension 'x' 'z' --types 'temperature' 'number_density' --method 'slice'
+## Example command: python ~/git_repos/athenapp_root/analysis/get_plots.py --base_ext "M87.out2." --snapshots 50 500
+##  --window 0.5 5 50 --dimension 'x' 'z' --types 'temperature' 'number_density' --method 'slice'
 
 
 import yt
@@ -304,7 +304,7 @@ def get_multiple_snapshots(location: str, base_ext: str, dimensions: list[str], 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Simulation data video generator')
-    parser.add_argument('--path', type=str, help='path to the simulation data')
+    parser.add_argument('--path', type=str, default=os.getcwd(), help='path to the simulation data', required=False)
     parser.add_argument('--base_ext', type=str, help='base extension of the simulation data')
     parser.add_argument('--snapshots', type=int, nargs='+', action="store", help='range of snapshots (start, end)')
     parser.add_argument('--window', type=float, nargs='+', action="store", help='window size for the plots in kpc')
@@ -315,12 +315,12 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    path = args.path
+    path = args.path + '/'
     base_ext = args.base_ext
     (start_nfile, stop_nfile) = args.snapshots
     window = list(args.window)
     for i in range(len(window)):
-        window[i] =  (window[i], "kpc")
+        window[i] = (window[i], "kpc")
     dimensions = args.dimensions
     types = args.types
     method = args.method
