@@ -447,7 +447,7 @@ def main():
     parser.add_argument('--n_bins', dest="n_bins", type=int, default=80, help='Number of bins for the radial profiles', required=False)
     parser.add_argument('--temp_sep', dest="temp_sep", action="store_true", help='Separate the temperature into cold and hot components')
     parser.add_argument('--weight', dest="weight", type=str, default="mass", help="Field to use as weight for the radial profiles, 'mass', 'volume', or None", required=False)
-    parset.add_argument('--nproc', dest="nproc", type=int, default=cpu_count(), help='Number of cores to use for multiprocessing', required=False)
+    parser.add_argument('--nproc', dest="nproc", type=int, default=cpu_count(), help='Number of cores to use for multiprocessing', required=False)
 
     args = parser.parse_args()
 
