@@ -483,7 +483,7 @@ def main():
     print(f"Separate temperature: {temp_sep}")
     print(f"Weighted average based on : {weight_field}")
 
-    total_data = get_multiple_snapshots(path, base_ext, fields, start_nfile, stop_nfile, maxR, minR, n_bins, units_list, temp_sep, weight_field, npoc=nproc)
+    total_data = get_multiple_snapshots(path, base_ext, fields, start_nfile, stop_nfile, maxR, minR, n_bins, units_list, temp_sep, weight_field, nproc)
     sorted_dict = dict(sorted(total_data.items()))
 
     if temp_sep:
