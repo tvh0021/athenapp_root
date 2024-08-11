@@ -242,7 +242,7 @@ def make_plots(location: str, base_ext: str, dimensions: list[str], types: list[
                         p.set_zlim(plot_type,zmin=lookup_range[plot_type][0],zmax=lookup_range[plot_type][1]) # 1e0 to 5e6 if meso scale
                         p.set_cmap(plot_type,lookup_cmap[plot_type])
                         p.annotate_scale(corner='lower_left')
-                        p.annotate_timestamp(time_unit="Myr",corner='upper_right')
+                        p.annotate_timestamp(time_unit="Myr",corner='upper_right', time_format='t = {time:.3f} {units}')
                         p.annotate_title(f"{dim} {plot_type} projection")
                         if velocity_on:
                             p.annotate_streamlines(("gas", f"velocity_{restrict_dim[0]}"), ("gas", f"velocity_{restrict_dim[1]}"),factor=2,density=3)
@@ -261,7 +261,7 @@ def make_plots(location: str, base_ext: str, dimensions: list[str], types: list[
                         s.set_zlim(plot_type,zmin=lookup_range[plot_type][0],zmax=lookup_range[plot_type][1])
                         s.set_cmap(plot_type,lookup_cmap[plot_type])
                         s.annotate_scale(corner='lower_left')
-                        s.annotate_timestamp(time_unit="Myr",corner='upper_right')
+                        s.annotate_timestamp(time_unit="Myr",corner='upper_right', time_format='t = {time:.3f} {units}')
                         s.annotate_title(f"{dim} {plot_type} slice")
                         s.hide_axes()
                         if (dim == 'y'):
