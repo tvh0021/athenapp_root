@@ -333,7 +333,7 @@ def get_radial_data(location : str, base_ext : str, i : int, fields : list[str],
 
     return (time, save_data)
 
-def get_multiple_snapshots(location: str, base_ext: str, fields : list[str], start_nfile: int, stop_nfile: int, maxR: float, minR: float, n_bins: int, units: list[str], temp_sep: bool = True, weight_field : str = "mass"):
+def get_multiple_snapshots(location: str, base_ext: str, fields : list[str], start_nfile: int, stop_nfile: int, maxR: float, minR: float, n_bins: int, units: list[str], temp_sep: bool = True, weight_field : str = "mass", nproc: int = cpu_count()):
     """With multiprocessing, generate multiple snapshots of the simulation data at once and save them to the specified location
 
     Args:
@@ -348,16 +348,17 @@ def get_multiple_snapshots(location: str, base_ext: str, fields : list[str], sta
         units (list[str]): units of the fields
         temp_sep (bool): separate the temperature into cold and hot components
         weight_field (str): field to use as weight for the radial profiles, default is "mass"
+        nproc (int): number of cores to use for multiprocessing
     Returns:
         dict: dictionary containing the radial profiles
     """
-    print("Saving snapshots using {} cores".format(cpu_count()), flush=True)
+    print("Saving snapshots using {} cores".format(nproc), flush=True)
 
     # keys = ['radius'] + fields
     total_data_save = {}
     # total_data_save['fields'] = keys
 
-    with Pool() as p:
+    with Pool(processes=nproc) as p:
         items = [(location, base_ext, k, fields, maxR, minR, n_bins, units, temp_sep, weight_field) for k in range(start_nfile, stop_nfile+1)]
 
         for k in enumerate(p.starmap(get_radial_data, items)):
@@ -446,6 +447,7 @@ def main():
     parser.add_argument('--n_bins', dest="n_bins", type=int, default=80, help='Number of bins for the radial profiles', required=False)
     parser.add_argument('--temp_sep', dest="temp_sep", action="store_true", help='Separate the temperature into cold and hot components')
     parser.add_argument('--weight', dest="weight", type=str, default="mass", help="Field to use as weight for the radial profiles, 'mass', 'volume', or None", required=False)
+    parset.add_argument('--nproc', dest="nproc", type=int, default=cpu_count(), help='Number of cores to use for multiprocessing', required=False)
 
     args = parser.parse_args()
 
@@ -458,6 +460,7 @@ def main():
     n_bins = args.n_bins
     temp_sep = args.temp_sep
     weight_field = args.weight
+    nproc = args.nproc
 
     get_m_dot = False
     if "m_dot" in fields:
@@ -480,7 +483,7 @@ def main():
     print(f"Separate temperature: {temp_sep}")
     print(f"Weighted average based on : {weight_field}")
 
-    total_data = get_multiple_snapshots(path, base_ext, fields, start_nfile, stop_nfile, maxR, minR, n_bins, units_list, temp_sep, weight_field)
+    total_data = get_multiple_snapshots(path, base_ext, fields, start_nfile, stop_nfile, maxR, minR, n_bins, units_list, temp_sep, weight_field, npoc=nproc)
     sorted_dict = dict(sorted(total_data.items()))
 
     if temp_sep:
