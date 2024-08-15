@@ -474,7 +474,7 @@ void Mesh::InitUserMeshData(ParameterInput *pin)
     // Print data to output file-----------------------------------------------------------------
     if (Globals::my_rank == 0)
     {
-        std::cout.precision(6);
+        std::cout.precision(10);
 
         if (restartFlag == true && newGridFlag == false)
         {

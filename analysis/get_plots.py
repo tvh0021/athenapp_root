@@ -271,7 +271,7 @@ def make_plots(location: str, base_ext: str, dimensions: list[str], types: list[
                         s.save(location+f'slice,{dim},{plot_type},{zoom[0]}/{base_ext}{ind}.png')
 
 
-def get_multiple_snapshots(location: str, base_ext: str, dimensions: list[str], types: list[str], window: list[tuple], start_nfile: int, stop_nfile: int, method: str, velocity_on: bool = False):
+def get_multiple_snapshots(location: str, base_ext: str, dimensions: list[str], types: list[str], window: list[tuple], start_nfile: int, stop_nfile: int, method: str, nproc: int, velocity_on: bool = False,):
     """With multiprocessing, generate multiple snapshots of the simulation data at once and save them to the specified location
 
     Args:
@@ -283,6 +283,7 @@ def get_multiple_snapshots(location: str, base_ext: str, dimensions: list[str], 
         start_nfile (int): starting snapshot number
         stop_nfile (int): ending snapshot number
         method (str): slice or projection
+        nproc (int): number of cores to use for multiprocessing
         velocity_on (bool, optional): whether velocity streamlines are plotted. Defaults to False.
 
     Returns:
@@ -291,9 +292,9 @@ def get_multiple_snapshots(location: str, base_ext: str, dimensions: list[str], 
 
     # kernel_size = kernelA.shape[0]
     # extended_feature = np.pad(feature_array, ((kernel_size//2,kernel_size//2),(kernel_size//2,kernel_size//2),(kernel_size//2,kernel_size//2)), mode='wrap')
-    print("Saving snapshots using {} cores".format(cpu_count()), flush=True)
+    print("Saving snapshots using {} cores".format(nproc), flush=True)
 
-    with Pool() as p:
+    with Pool(processes=nproc) as p:
         items = [(location, base_ext, dimensions, types, window, k, k, method, velocity_on) for k in range(start_nfile, stop_nfile+1)]
 
         for k in enumerate(p.starmap(make_plots, items)):
@@ -311,6 +312,7 @@ if __name__ == "__main__":
     parser.add_argument('--dimensions', type=str, nargs='+', action="store", help='dimensions to plot')
     parser.add_argument('--types', type=str, nargs='+', action="store", help='physical quantities to plot')
     parser.add_argument('--method', type=str, help='slice or projection')
+    parser.add_argument('--nproc', type=int, default=cpu_count(), help='number of cores to use for multiprocessing', required=False)
     parser.add_argument('--velocity_on', action="store_true", help='velocity streamlines on or off', required=False)
 
     args = parser.parse_args()
@@ -325,6 +327,7 @@ if __name__ == "__main__":
     types = args.types
     method = args.method
     velocity_on = args.velocity_on
+    nproc = args.nproc
 
     print("Parameters: ")
     print(f"Path: {path}")
@@ -349,4 +352,4 @@ if __name__ == "__main__":
                         os.mkdir(path+f'slice,{dim},{plot_type},{zoom[0]}')
 
     # make_plots(path, base_ext, dimensions, types, window, start_nfile, stop_nfile, method, velocity_on)
-    get_multiple_snapshots(path, base_ext, dimensions, types, window, start_nfile, stop_nfile, method, velocity_on)
+    get_multiple_snapshots(path, base_ext, dimensions, types, window, start_nfile, stop_nfile, method, nproc, velocity_on)
