@@ -222,6 +222,12 @@ def VSF_3D(
         print("Order not valid, defaulting to 1st order VSF")
         order = 1
 
+    # print(f"Average supplied x velocity: {np.mean(vx)} km/s")
+    # print(f"Average supplied y velocity: {np.mean(vy)} km/s")
+    # print(f"Average supplied z velocity: {np.mean(vz)} km/s")
+
+    # print(f"First velocity vector: {vx[0]}, {vy[0]}, {vz[0]} km/s")
+
     # create bins of equal size in log space
     bins = 10.0 ** np.linspace(np.log10(min_distance), np.log10(max_distance), n_bins)
     squared_bins = bins**2
@@ -230,8 +236,11 @@ def VSF_3D(
 
     # loop through bins
     for this_bin_index in range(len(squared_bins) - 1):
-        if (this_bin_index + 1) % 20 == 0:
+        if (this_bin_index + 1) % 10 == 0:
             print(f"bin {this_bin_index+1} of {len(squared_bins)-1} : START")
+            # print(
+            #     f"Distances in this bin: {float(bins[this_bin_index])}-{float(bins[this_bin_index+1])} pc"
+            # )
         # for each point in the data, find the distance to all other points, then choose only the distances that are in the same bin
         weights = np.zeros(len(X))
         mean_velocity_differences = np.zeros(len(X))
@@ -245,9 +254,8 @@ def VSF_3D(
                 (squared_bins[this_bin_index] < squared_distance_to_point_a)
                 & (squared_distance_to_point_a <= squared_bins[this_bin_index + 1])
             ] = True
-            elements_in_this_bin[:point_a] = (
-                False  # don't calculate the same point twice
-            )
+            # don't calculate the same point again
+            elements_in_this_bin[:point_a] = False
 
             squared_velocity_difference_to_point_a = (
                 (vx[point_a] - vx[elements_in_this_bin]) ** 2
@@ -257,22 +265,29 @@ def VSF_3D(
 
             # calculate the mean of the velocity differences
             if order == 1:
-                mean_velocity_differences[point_a] = np.mean(
-                    np.sqrt(squared_velocity_difference_to_point_a)
-                )
+                if np.sum(elements_in_this_bin) == 0:
+                    mean_velocity_differences[point_a] = 0.0
+                else:
+                    mean_velocity_differences[point_a] = np.mean(
+                        np.sqrt(squared_velocity_difference_to_point_a)
+                    )
             else:
                 mean_velocity_differences[point_a] = np.mean(
                     squared_velocity_difference_to_point_a
                 )
-            weights[point_a] = len(
-                squared_velocity_difference_to_point_a
-            )  # the number of points in the distance bin is the weight for the mean calculation later
+            # the number of points in the distance bin is the weight for the mean calculation later
+            weights[point_a] = len(squared_velocity_difference_to_point_a)
 
-        if (this_bin_index + 1) % 20 == 0:
+        if (this_bin_index + 1) % 10 == 0:
             print(f"bin {this_bin_index+1} of {len(squared_bins)-1} : END")
+            # print(
+            #     f"Mean velocity difference at this bin: {np.mean(mean_velocity_differences)} km/s"
+            # )
 
         # calculate the mean of the velocity differences in this bin
-        # mean_velocity_differences[weights == 0] = 0. # set the mean to 0 if there are no points in the bin
+        mean_velocity_differences[weights == 0] = (
+            0.0  # set the mean to 0 if there are no points in the bin
+        )
 
         if np.max(weights) == 0:  # if there are no points in the bin, set the VSF to 0
             vsf_per_bin[this_bin_index] = 0.0
@@ -618,7 +633,9 @@ if __name__ == "__main__":
             print("Regridding done", flush=True)
             print(datadict.keys(), flush=True)
 
-            if True:
+            save_to_file = False
+
+            if save_to_file:
                 save_name = f"regridded_data_{time}kyr_{window_size.value}kpc.pkl"
                 with open(path + save_name, "wb") as f:
                     pickle.dump(datadict, f)
@@ -626,8 +643,9 @@ if __name__ == "__main__":
 
         # VSF calculation
         if True:
+            read_data_from_file = False
             # get uniform grid of positions and import velocity and temperature data
-            if False:
+            if read_data_from_file:
                 dim = 256
                 box_width = 10 * 1.0e-3  # Mpc
 
@@ -647,7 +665,9 @@ if __name__ == "__main__":
                     mid_points, mid_points, mid_points, indexing="ij"
                 )
 
-                datacube = np.load(path + f"regridded_vel_{time}Myr_{box_width}Mpc.npy")
+                datacube = np.load(
+                    path + f"regridded_data_{time}kyr_{box_width}kpc.npy"
+                )
                 temperature = (
                     datacube[:, :, :, 3] * code_temperature
                 )  # convert from code units to K
@@ -874,13 +894,13 @@ if __name__ == "__main__":
                 else:
                     sample_size = len(X)
 
+                # V_mag = np.sqrt(vx**2 + vy**2 + vz**2)
                 # print(
-                #     f"Number of cells that is not nan: {np.count_nonzero(~np.isnan(vx))}, {np.count_nonzero(~np.isnan(vy))}, {np.count_nonzero(~np.isnan(vz))}",
-                #     flush=True,
+                #     "Velocity range (km/s): ", np.min(V_mag), np.max(V_mag), flush=True
                 # )
 
                 n_bins = 50
-                min_distance = grid_resolution.in_units("pc").value
+                min_distance = grid_resolution.in_units("pc").value * 4
                 max_distance = window_size.in_units("pc").value
 
                 dist_array, v_diff_mean = VSF_3D(
@@ -897,17 +917,17 @@ if __name__ == "__main__":
                 print("distance array: ", dist_array, flush=True)
                 print("v_diff_mean: ", v_diff_mean, flush=True)
 
-                # plt.figure(figsize=(10, 8), dpi=300)
-                # plt.plot(
-                #     dist_array[:-2] * 1.0e-3,
-                #     v_diff_mean[:-1],
-                #     linewidth=2,
-                #     c="C0",
-                #     label="CGM",
-                #     marker="o",
-                #     markersize=7,
-                #     linestyle="-",
-                # )
-                # # plt.xticks(fontsize=20)
-                # # plt.yticks(fontsize=20)
-                # plt.show()
+                plt.figure(figsize=(10, 8), dpi=300)
+                plt.plot(
+                    dist_array[:-2] * 1.0e-3,
+                    v_diff_mean[:-1],
+                    linewidth=2,
+                    c="C0",
+                    label="CGM",
+                    marker="o",
+                    markersize=7,
+                    linestyle="-",
+                )
+                # plt.xticks(fontsize=20)
+                # plt.yticks(fontsize=20)
+                plt.show()
