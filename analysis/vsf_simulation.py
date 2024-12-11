@@ -9,7 +9,7 @@ import random
 
 random.seed(10)
 
-from athena_read import athdf
+# from athena_read import athdf
 
 import argparse, os, pickle
 
@@ -328,119 +328,120 @@ if __name__ == "__main__":
         time = int(ds.current_time.to("kyr"))
         print(f"Simulation time: {time} kyr", flush=True)
 
-        # regridding data with athena built-in function
-        use_athena_regrid = False
-        if use_athena_regrid:
-            box_width = 1 * 1.0e-3  # Mpc
-            bounding_length = box_width / 2 / code_length
-            datadict = athdf(
-                myfilename,
-                quantities=("vel1", "vel2", "vel3", "press", "rho"),
-                level=9,
-                subsample=True,
-                x1_min=-bounding_length,
-                x1_max=bounding_length,
-                x2_min=-bounding_length,
-                x2_max=bounding_length,
-                x3_min=-bounding_length,
-                x3_max=bounding_length,
-            )
+        # # regridding data with athena built-in function
+        # use_athena_regrid = False
+        # if use_athena_regrid:
+        #     box_width = 1 * 1.0e-3  # Mpc
+        #     bounding_length = box_width / 2 / code_length
+        #     datadict = athdf(
+        #         myfilename,
+        #         quantities=("vel1", "vel2", "vel3", "press", "rho"),
+        #         level=9,
+        #         subsample=True,
+        #         x1_min=-bounding_length,
+        #         x1_max=bounding_length,
+        #         x2_min=-bounding_length,
+        #         x2_max=bounding_length,
+        #         x3_min=-bounding_length,
+        #         x3_max=bounding_length,
+        #     )
 
-            print("Regridding done", flush=True)
-            # print(datadict.keys(), flush=True)
-            print(datadict["vel1"].shape, flush=True)
+        #     print("Regridding done", flush=True)
+        #     # print(datadict.keys(), flush=True)
+        #     print(datadict["vel1"].shape, flush=True)
 
-            datacube = np.empty(
-                (
-                    datadict["vel1"].shape[0],
-                    datadict["vel1"].shape[1],
-                    datadict["vel1"].shape[2],
-                    5,
-                ),
-                dtype=np.float64,
-            )
-            datacube[:, :, :, 0] = datadict["vel3"]
-            datacube[:, :, :, 1] = datadict["vel2"]
-            datacube[:, :, :, 2] = datadict["vel1"]
-            datacube[:, :, :, 3] = datadict["press"]
-            datacube[:, :, :, 4] = datadict["rho"]
+        #     datacube = np.empty(
+        #         (
+        #             datadict["vel1"].shape[0],
+        #             datadict["vel1"].shape[1],
+        #             datadict["vel1"].shape[2],
+        #             5,
+        #         ),
+        #         dtype=np.float64,
+        #     )
+        #     datacube[:, :, :, 0] = datadict["vel3"]
+        #     datacube[:, :, :, 1] = datadict["vel2"]
+        #     datacube[:, :, :, 2] = datadict["vel1"]
+        #     datacube[:, :, :, 3] = datadict["press"]
+        #     datacube[:, :, :, 4] = datadict["rho"]
 
-            # convert these into physical units and calculate the temperature
-            velocities = (
-                datacube[:, :, :, 0:3] / kms_Astronomical * code_velocity
-            )  # in km/s
-            velocity_magnitude = np.sqrt(
-                velocities[:, :, :, 0] ** 2
-                + velocities[:, :, :, 1] ** 2
-                + velocities[:, :, :, 2] ** 2
-            )
-            print(
-                "Velocity range (km/s): ",
-                np.min(velocity_magnitude),
-                np.max(velocity_magnitude),
-                flush=True,
-            )
+        #     # convert these into physical units and calculate the temperature
+        #     velocities = (
+        #         datacube[:, :, :, 0:3] / kms_Astronomical * code_velocity
+        #     )  # in km/s
+        #     velocity_magnitude = np.sqrt(
+        #         velocities[:, :, :, 0] ** 2
+        #         + velocities[:, :, :, 1] ** 2
+        #         + velocities[:, :, :, 2] ** 2
+        #     )
+        #     print(
+        #         "Velocity range (km/s): ",
+        #         np.min(velocity_magnitude),
+        #         np.max(velocity_magnitude),
+        #         flush=True,
+        #     )
 
-            # calculate temperature
-            # print("Density range (code units): ", np.min(datacube[:,:,:,4]), np.max(datacube[:,:,:,4]), flush=True)
-            # print("conversion: ", mu * hydrogenMassAstronomical, flush=True)
-            number_density_code = datacube[:, :, :, 4] / (mu * hydrogenMassAstronomical)
-            print(
-                "Number density range (cm**-3): ",
-                np.min(number_density_code) * (code_volume**3),
-                np.max(number_density_code) * (code_volume**3),
-                flush=True,
-            )
-            temperature = (
-                datacube[:, :, :, 3]
-                / (number_density_code * codeBoltzmannConst)
-                * code_temperature
-            )
-            print(
-                "Temperature range (K): ",
-                np.min(temperature),
-                np.max(temperature),
-                flush=True,
-            )
+        #     # calculate temperature
+        #     # print("Density range (code units): ", np.min(datacube[:,:,:,4]), np.max(datacube[:,:,:,4]), flush=True)
+        #     # print("conversion: ", mu * hydrogenMassAstronomical, flush=True)
+        #     number_density_code = datacube[:, :, :, 4] / (mu * hydrogenMassAstronomical)
+        #     print(
+        #         "Number density range (cm**-3): ",
+        #         np.min(number_density_code) * (code_volume**3),
+        #         np.max(number_density_code) * (code_volume**3),
+        #         flush=True,
+        #     )
+        #     temperature = (
+        #         datacube[:, :, :, 3]
+        #         / (number_density_code * codeBoltzmannConst)
+        #         * code_temperature
+        #     )
+        #     print(
+        #         "Temperature range (K): ",
+        #         np.min(temperature),
+        #         np.max(temperature),
+        #         flush=True,
+        #     )
 
-            if False:
-                save_name = f"regridded_prim_{time}Myr_{box_width}Mpc.npy"
-                np.save(path + save_name, datacube)
-                print(f"Regridded raw data saved in {path} as {save_name}", flush=True)
+        #     if False:
+        #         save_name = f"regridded_prim_{time}Myr_{box_width}Mpc.npy"
+        #         np.save(path + save_name, datacube)
+        #         print(f"Regridded raw data saved in {path} as {save_name}", flush=True)
 
-            if False:
-                save_name1 = f"regridded_vel_{time}Myr_{box_width}Mpc.npy"
-                np.save(path + save_name1, velocities)
-                save_name2 = f"regridded_temperature_{time}Myr_{box_width}Mpc.npy"
-                np.save(path + save_name2, temperature)
-                print(
-                    f"Regridded processed data saved in {path} as {save_name1} and {save_name2}",
-                    flush=True,
-                )
+        #     if False:
+        #         save_name1 = f"regridded_vel_{time}Myr_{box_width}Mpc.npy"
+        #         np.save(path + save_name1, velocities)
+        #         save_name2 = f"regridded_temperature_{time}Myr_{box_width}Mpc.npy"
+        #         np.save(path + save_name2, temperature)
+        #         print(
+        #             f"Regridded processed data saved in {path} as {save_name1} and {save_name2}",
+        #             flush=True,
+        #         )
+
+        # else:
         # regridding data with yt built-in function
-        else:
-            # 15m for 128^3 on 1 Rome node, 2h20m for 256^3 (for one field)
-            datadict = regrid_yt(
-                myfilename,
-                units_override,
-                fields=["velocity_x", "velocity_y", "velocity_z", "density"],
-                dim=[grid_size, grid_size, grid_size],
-                bounding_length=[
-                    window_size.value,
-                    window_size.value,
-                    window_size.value,
-                ],
-            )
-            print("Regridding done", flush=True)
-            print(datadict.keys(), flush=True)
+        # 15m for 128^3 on 1 Rome node, 2h20m for 256^3 (for one field)
+        datadict = regrid_yt(
+            myfilename,
+            units_override,
+            fields=["velocity_x", "velocity_y", "velocity_z", "density"],
+            dim=[grid_size, grid_size, grid_size],
+            bounding_length=[
+                window_size.value,
+                window_size.value,
+                window_size.value,
+            ],
+        )
+        print("Regridding done", flush=True)
+        print(datadict.keys(), flush=True)
 
-            save_to_file = False
+        save_to_file = False
 
-            if save_to_file:
-                save_name = f"regridded_data_{time}kyr_{window_size.value}kpc.pkl"
-                with open(path + save_name, "wb") as f:
-                    pickle.dump(datadict, f)
-                print(f"Regridded data saved in {path} as {save_name}", flush=True)
+        if save_to_file:
+            save_name = f"regridded_data_{time}kyr_{window_size.value}kpc.pkl"
+            with open(path + save_name, "wb") as f:
+                pickle.dump(datadict, f)
+            print(f"Regridded data saved in {path} as {save_name}", flush=True)
 
         # VSF calculation
         calculate_vsf = True
