@@ -1,9 +1,7 @@
 import numpy as np
-from numba import njit, jit, prange
+from numba import njit, prange
 
 import yt
-from yt import physical_constants as phc
-from yt import derived_field
 import yt.units as u
 
 import matplotlib.pyplot as plt
@@ -12,9 +10,6 @@ import random
 random.seed(10)
 
 from athena_read import athdf
-
-from multiprocessing import Pool
-from multiprocessing import cpu_count
 
 import argparse, os, pickle
 
@@ -53,35 +48,6 @@ lookup_units = {
     "m_dot_out_cold": "Msun/yr",
     "m_dot_out_hot": "Msun/yr",
 }
-
-
-def regrid(
-    file_name: str,
-    units_override: dict,
-    field=["velocity_x", "velocity_y", "velocity_z", "temperature"],
-    dim=256,
-    bounding_length=1.0,
-):
-
-    # ds = yt.load(file_name,units_override=units_override)
-    L = bounding_length
-
-    datacube = np.zeros((dim, dim, dim, len(field)))
-
-    coords_range = np.linspace(-L, L, dim + 1, endpoint=True)
-    # mid_coords = [0.5 * (coords_range[i] + coords_range[i+1]) for i in range(dim)]
-
-    # for i_field in range(len(field)):
-    print(f"Regridding {field} using {cpu_count()} cores", flush=True)
-
-    with Pool() as p:
-        items = [
-            (file_name, i, field, dim, coords_range, units_override) for i in range(dim)
-        ]
-
-        for i, result in enumerate(p.starmap(find_nearest, items)):
-            datacube[i, :, :, :] = result
-    return datacube
 
 
 # Added 11/04/2024: use yt built-in function to regrid
@@ -132,49 +98,6 @@ def regrid_yt(
     return out_data
 
 
-def find_nearest(
-    file_name: str,
-    i: int,
-    field: list[str],
-    dim: int,
-    bounds: np.ndarray,
-    units_override: dict,
-    method="nearest",
-):
-    ds = yt.load(file_name, units_override=units_override)
-    # print("units_override: ", ds.units_override, flush=True)
-    print(f"i = {i+1} of {dim} : START", flush=True)
-    dataslice = np.zeros((dim, dim, len(field)))
-
-    if method == "interp":
-        print("Via interpolation...", flush=True)
-        for j in range(dim):
-            for k in range(dim):
-                region_of_interest = ds.region(
-                    center=[0.0, 0.0, 0.0],
-                    left_edge=[bounds[i], bounds[j], bounds[k]],
-                    right_edge=[bounds[i + 1], bounds[j + 1], bounds[k + 1]],
-                )
-                for f in range(len(field)):
-                    dataslice[j, k, f] = region_of_interest.mean(
-                        field[f], weight=("volume")
-                    )
-    elif method == "nearest":
-        print("Via nearest neighbor...", flush=True)
-        mid_coords = [0.5 * (bounds[i] + bounds[i + 1]) for i in range(dim)]
-        for j in range(dim):
-            for k in range(dim):
-                for f in range(len(field)):
-                    dataslice[j, k, f] = ds.r[
-                        mid_coords[i], mid_coords[j], mid_coords[k]
-                    ][field[f]]
-    else:
-        print("Invalid method. Please use 'interp' or 'nearest'", flush=True)
-        return None
-    print(f"i = {i+1} of {dim} : END", flush=True)
-    return dataslice
-
-
 @njit(parallel=True)
 def VSF_3D(
     X: np.ndarray,
@@ -221,12 +144,6 @@ def VSF_3D(
     else:
         print("Order not valid, defaulting to 1st order VSF")
         order = 1
-
-    # print(f"Average supplied x velocity: {np.mean(vx)} km/s")
-    # print(f"Average supplied y velocity: {np.mean(vy)} km/s")
-    # print(f"Average supplied z velocity: {np.mean(vz)} km/s")
-
-    # print(f"First velocity vector: {vx[0]}, {vy[0]}, {vz[0]} km/s")
 
     # create bins of equal size in log space
     bins = 10.0 ** np.linspace(np.log10(min_distance), np.log10(max_distance), n_bins)
@@ -343,122 +260,7 @@ codeBoltzmannConst = boltzmannConstAstronomical / (code_energy / code_temperatur
 kms_Astronomical = kmCGS / (MpcCGS / MyrCGS)
 hydrogenMassAstronomical = hydrogenMassCGS / solarMassCGS
 
-SMBHMass = 6.5e9  # solar masses
-
-# logTemperatureArray = np.array([3.8, 3.84, 3.88, 3.92, 3.96, 4., 4.04, 4.08, 4.12, 4.16, 4.2,
-#                                           4.24, 4.28, 4.32, 4.36, 4.4, 4.44, 4.48, 4.52, 4.56, 4.6, 4.64,
-#                                           4.68, 4.72, 4.76, 4.8, 4.84, 4.88, 4.92, 4.96, 5., 5.04, 5.08,
-#                                           5.12, 5.16, 5.2, 5.24, 5.28, 5.32, 5.36, 5.4, 5.44, 5.48, 5.52,
-#                                           5.56, 5.6, 5.64, 5.68, 5.72, 5.76, 5.8, 5.84, 5.88, 5.92, 5.96,
-#                                           6., 6.04, 6.08, 6.12, 6.16, 6.2, 6.24, 6.28, 6.32, 6.36, 6.4,
-#                                           6.44, 6.48, 6.52, 6.56, 6.6, 6.64, 6.68, 6.72, 6.76, 6.8, 6.84,
-#                                           6.88, 6.92, 6.96, 7., 7.04, 7.08, 7.12, 7.16, 7.2, 7.24, 7.28,
-#                                           7.32, 7.36, 7.4, 7.44, 7.48, 7.52, 7.56, 7.6, 7.64, 7.68, 7.72,
-#                                           7.76, 7.8, 7.84, 7.88, 7.92, 7.96, 8., 8.04, 8.08, 8.12, 8.16])
-# logEmissivityHydroArray = np.array([-30.6104, -29.4107, -28.4601, -27.5743, -26.3766, -25.289,
-#                                               -24.2684, -23.3834, -22.5977, -21.9689, -21.5972, -21.4615,
-#                                               -21.4789, -21.5497, -21.6211, -21.6595, -21.6426, -21.5688,
-#                                               -21.4771, -21.3755, -21.2693, -21.1644, -21.0658, -20.9778,
-#                                               -20.8986, -20.8281, -20.77, -20.7223, -20.6888, -20.6739,
-#                                               -20.6815, -20.7051, -20.7229, -20.7208, -20.7058, -20.6896,
-#                                               -20.6797, -20.6749, -20.6709, -20.6748, -20.7089, -20.8031,
-#                                               -20.9647, -21.1482, -21.2932, -21.3767, -21.4129, -21.4291,
-#                                               -21.4538, -21.5055, -21.574, -21.63, -21.6615, -21.6766,
-#                                               -21.6886, -21.7073, -21.7304, -21.7491, -21.7607, -21.7701,
-#                                               -21.7877, -21.8243, -21.8875, -21.9738, -22.0671, -22.1537,
-#                                               -22.2265, -22.2821, -22.3213, -22.3462, -22.3587, -22.3622,
-#                                               -22.359, -22.3512, -22.342, -22.3342, -22.3312, -22.3346,
-#                                               -22.3445, -22.3595, -22.378, -22.4007, -22.4289, -22.4625,
-#                                               -22.4995, -22.5353, -22.5659, -22.5895, -22.6059, -22.6161,
-#                                               -22.6208, -22.6213, -22.6184, -22.6126, -22.6045, -22.5945,
-#                                               -22.5831, -22.5707, -22.5573, -22.5434, -22.5287, -22.514,
-#                                               -22.4992, -22.4844, -22.4695, -22.4543, -22.4392, -22.4237,
-#                                               -22.4087, -22.3928])
-
-# tempList = np.logspace(3.,9.,200)
-
-# def emissivityFromTemperature(temperature):
-#     #Real emissivityCGS, emissivityAstronomical;
-#     logTemperature = np.log10(temperature)
-#     if logTemperature <= 4.2: # Koyama & Inutsuka (2002)
-#         emissivityCGS = (2.0e-19 * np.exp(-1.184e5 / (temperature + 1.e3)) + 2.8e-28 * np.sqrt(temperature) * np.exp(-92. / temperature))
-#     elif logTemperature > 8.15: # Schneider & Robertson (2018)
-#         emissivityCGS = 10.**(0.45 * logTemperature - 26.065)
-#     else: # Schure+09
-#         emissivityCGS = 10.**(np.interp(logTemperature, logTemperatureArray, logEmissivityHydroArray))
-
-#     # emissivityAstronomical = emissivityCGS / (solarMassCGS * pow(MpcCGS, 5) * pow(MyrCGS, -3))
-
-#     return emissivityCGS
-
-# lambdaListCGS = np.zeros(200)
-# for i, temp in enumerate(tempList):
-#     lambdaListCGS[i] = emissivityFromTemperature(temp)
-
-# @derived_field(name="cooling_time", sampling_type="cell", units="Myr", force_override=True)
-# def _cooling_time(field, data):
-#     return ( (5/2) *  phc.kboltz * (data["gas", "temperature"].to("K")) / ((data["gas", "number_density"].to("cm**-3")) * np.interp(data["gas", "temperature"].to("K"), tempList, lambdaListCGS) * (ds.units.erg / ds.units.s * ds.units.cm**3)))
-
-# @derived_field(name="sound_crossing_time", sampling_type="cell", units="Myr", force_override=True)
-# def _sound_crossing_time(field, data):
-#     return data["gas", "dx"] / np.sqrt(data.ds.gamma * data["gas", "pressure"] / data["gas", "density"])
-
-# @derived_field(name="cooling_ratio", sampling_type="cell", force_override=True)
-# def _cooling_ratio(field, data):
-#     return data["gas", "cooling_time"] / data["gas", "sound_crossing_time"]
-
-# @derived_field(name="keplerian_speed", sampling_type="cell", units="Mpc/Myr", force_override=True)
-# def _keplerian_speed(field, data):
-#     return np.sqrt(phc.G * SMBHMass * phc.msun / data["index", "radius"])
-
-# @derived_field(name="keplerian_specific_angular_momentum", sampling_type="cell", units="Mpc**2/Myr", force_override=True)
-# def _keplerian_specific_angular_momentum(field, data):
-#     return data["gas", "keplerian_speed"] * data["index", "radius"]
-
-# @derived_field(name="normalized_specific_angular_momentum_x", sampling_type="cell", force_override=True)
-# def _normalized_specific_angular_momentum_x(field, data):
-#     return data["gas", "specific_angular_momentum_x"] / data["gas", "keplerian_specific_angular_momentum"]
-
-# @derived_field(name="normalized_specific_angular_momentum_y", sampling_type="cell", force_override=True)
-# def _normalized_specific_angular_momentum_y(field, data):
-#     return data["gas", "specific_angular_momentum_y"] / data["gas", "keplerian_specific_angular_momentum"]
-
-# @derived_field(name="normalized_specific_angular_momentum_z", sampling_type="cell", force_override=True)
-# def _normalized_specific_angular_momentum_z(field, data):
-#     return data["gas", "specific_angular_momentum_z"] / data["gas", "keplerian_specific_angular_momentum"]
-
-# @derived_field(name="keplerian_angular_momentum", sampling_type="cell", force_override=True)
-# def _keplerian_angular_momentum(field, data):
-#     return data["gas", "mass"] * data["gas", "keplerian_specific_angular_momentum"]
-
-# @derived_field(name="normalized_angular_momentum_x", sampling_type="cell", force_override=True)
-# def _normalized_angular_momentum_x(field, data):
-#     return data["gas", "angular_momentum_x"] / data["gas", "keplerian_angular_momentum"]
-
-# @derived_field(name="normalized_angular_momentum_y", sampling_type="cell", force_override=True)
-# def _normalized_angular_momentum_y(field, data):
-#     return data["gas", "angular_momentum_y"] / data["gas", "keplerian_angular_momentum"]
-
-# @derived_field(name="normalized_angular_momentum_z", sampling_type="cell", force_override=True)
-# def _normalized_angular_momentum_z(field, data):
-#     return data["gas", "angular_momentum_z"] / data["gas", "keplerian_angular_momentum"]
-
-# @derived_field(name="free_fall_time", sampling_type="cell", units="Myr", force_override=True)
-# def _free_fall_time(field, data):
-#     return np.pi / 2 * data["index","radius"]**(3/2) / np.sqrt(2 * phc.G * (SMBHMass * phc.msun + data["gas", "mass"]))
-
-# @derived_field(name="free_fall_ratio", sampling_type="cell", force_override=True)
-# def _free_fall_ratio(field, data):
-#     return data["gas", "cooling_time"] / data["gas", "free_fall_time"]
-
-# @derived_field(name="density_squared", sampling_type="cell", units="msun**2*Mpc**-6", force_override=True)
-# def _density_squared(field, data):
-#     return data["gas", "density"]**2
-
-
-@derived_field(name="angle_theta", sampling_type="cell", force_override=True)
-def _angle_theta(field, data):
-    return np.arccos(data["index", "z"] / data["index", "radius"])
+SMBHMass = 6.5e9 * u.Msun  # solar masses
 
 
 if __name__ == "__main__":
@@ -527,7 +329,8 @@ if __name__ == "__main__":
         print(f"Simulation time: {time} kyr", flush=True)
 
         # regridding data with athena built-in function
-        if False:
+        use_athena_regrid = False
+        if use_athena_regrid:
             box_width = 1 * 1.0e-3  # Mpc
             bounding_length = box_width / 2 / code_length
             datadict = athdf(
@@ -614,11 +417,9 @@ if __name__ == "__main__":
                     f"Regridded processed data saved in {path} as {save_name1} and {save_name2}",
                     flush=True,
                 )
-
-        # regridding data onto a uniform grid
-        if True:
-
-            # dim = 256  # 15m for 128^3 on 1 Rome node, 2h20m for 256^3 (for one field)
+        # regridding data with yt built-in function
+        else:
+            # 15m for 128^3 on 1 Rome node, 2h20m for 256^3 (for one field)
             datadict = regrid_yt(
                 myfilename,
                 units_override,
@@ -642,7 +443,8 @@ if __name__ == "__main__":
                 print(f"Regridded data saved in {path} as {save_name}", flush=True)
 
         # VSF calculation
-        if True:
+        calculate_vsf = True
+        if calculate_vsf:
             read_data_from_file = False
             # get uniform grid of positions and import velocity and temperature data
             if read_data_from_file:
@@ -712,6 +514,7 @@ if __name__ == "__main__":
                 # V_mag = velocity_magnitude
                 print("Number of cells in total: ", grid_size**3, flush=True)
 
+            # separate the data into cold and hot gas; this doesn't matter when we only care about the CGM
             separate_temperature = False
             if separate_temperature:
                 # mask data to separate cold and hot gas
@@ -880,7 +683,7 @@ if __name__ == "__main__":
                 print("Number of cells in the CGM: ", len(X), flush=True)
 
                 random.seed(42)
-                sample_size = int(1.0e4)
+                sample_size = int(1.0e5)
 
                 if len(X) > sample_size:
                     print(f"Sampling CGM as {sample_size} points")
@@ -893,11 +696,6 @@ if __name__ == "__main__":
                     vz = vz[random_indices]
                 else:
                     sample_size = len(X)
-
-                # V_mag = np.sqrt(vx**2 + vy**2 + vz**2)
-                # print(
-                #     "Velocity range (km/s): ", np.min(V_mag), np.max(V_mag), flush=True
-                # )
 
                 n_bins = 50
                 min_distance = grid_resolution.in_units("pc").value * 4
@@ -918,7 +716,7 @@ if __name__ == "__main__":
                 print("v_diff_mean: ", v_diff_mean, flush=True)
 
                 plt.figure(figsize=(10, 8), dpi=300)
-                plt.plot(
+                plt.loglog(
                     dist_array[:-2] * 1.0e-3,
                     v_diff_mean[:-1],
                     linewidth=2,
@@ -930,4 +728,62 @@ if __name__ == "__main__":
                 )
                 # plt.xticks(fontsize=20)
                 # plt.yticks(fontsize=20)
-                plt.show()
+                # plt.show()
+
+                full_ell_range = np.logspace(
+                    np.log10(min_distance * 2 * 1.0e-3),
+                    np.log10(max_distance / 2 * 1.0e-3),
+                    50,
+                )
+                ell_1_2 = full_ell_range ** (0.5) * 1.0e2
+                plt.plot(
+                    full_ell_range,
+                    ell_1_2,
+                    linestyle="--",
+                    c="C3",
+                    linewidth=2,
+                    label=r"$\ell^{1/2}$",
+                )
+                # plt.text(5.e-2, 1.2e2, r'$\ell^{0.58}$', fontsize=18)
+
+                ell_1_3 = full_ell_range ** (1.0 / 3.0) * 1.0e2
+                plt.plot(
+                    full_ell_range,
+                    ell_1_3,
+                    linestyle="-.",
+                    c="C6",
+                    linewidth=2,
+                    label=r"$\ell^{1/3}$",
+                )
+                # plt.text(2.7e-1, 5.e2, r'$\ell^{0.8}$', fontsize=18)h=2)
+
+                plt.xticks(fontsize=20)
+                plt.yticks(fontsize=20)
+
+                # 10 kpc box
+                # plt.xlim(1.8e-2, 2.e1)
+                # plt.ylim(8.e-1, 2.2e3)
+
+                # 1 kpc box
+
+                plt.ylim(v_diff_mean.min() / 1.5, v_diff_mean.max() * 1.2)
+                plt.xlabel(r"$\ell$ (kpc)", fontsize=22)
+                plt.ylabel(
+                    r"$\langle \delta \mathbf{v} \rangle$ (km s$^{-1}$)", fontsize=22
+                )
+                plt.title(f"VSF at {time} kyr, f = {f_kin}", fontsize=22)
+                plt.grid()
+                plt.legend(fontsize=20)
+
+                # path += "vsf-1kpc/"
+                if n < 10:
+                    file_n = "0000" + str(n)
+                elif (n >= 10) & (n < 100):
+                    file_n = "000" + str(n)
+                elif n >= 1000:
+                    file_n = "0" + str(n)
+                else:
+                    file_n = "00" + str(n)
+                plt.savefig(path + f"VSF_{file_n}_{window_size.value}.png")
+
+                print("Figure saved to ", path, flush=True)
