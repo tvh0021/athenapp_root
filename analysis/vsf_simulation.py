@@ -139,8 +139,10 @@ def VSF_3D(
 
     if order == 1:
         print("Calculating 1st order VSF")
+        print("Number of points: ", len(X))
     elif order == 2:
         print("Calculating 2nd order VSF")
+        print("Number of points: ", len(X))
     else:
         print("Order not valid, defaulting to 1st order VSF")
         order = 1
@@ -153,8 +155,8 @@ def VSF_3D(
 
     # loop through bins
     for this_bin_index in range(len(squared_bins) - 1):
-        if (this_bin_index + 1) % 10 == 0:
-            print(f"bin {this_bin_index+1} of {len(squared_bins)-1} : START")
+        if (this_bin_index) % 10 == 0:
+            print(f"bin {this_bin_index+1} of {len(squared_bins)} : START")
             # print(
             #     f"Distances in this bin: {float(bins[this_bin_index])}-{float(bins[this_bin_index+1])} pc"
             # )
@@ -195,8 +197,8 @@ def VSF_3D(
             # the number of points in the distance bin is the weight for the mean calculation later
             weights[point_a] = len(squared_velocity_difference_to_point_a)
 
-        if (this_bin_index + 1) % 10 == 0:
-            print(f"bin {this_bin_index+1} of {len(squared_bins)-1} : END")
+        if this_bin_index % 10 == 0:
+            print(f"bin {this_bin_index+1} of {len(squared_bins)} : END")
             # print(
             #     f"Mean velocity difference at this bin: {np.mean(mean_velocity_differences)} km/s"
             # )
@@ -683,24 +685,26 @@ if __name__ == "__main__":
                 vz = Vz[cgm_mask]
                 print("Number of cells in the CGM: ", len(X), flush=True)
 
-                random.seed(42)
-                sample_size = int(1.0e5)
+                # random.seed(42)
+                # sample_size = int(1.0e5)
 
-                if len(X) > sample_size:
-                    print(f"Sampling CGM as {sample_size} points")
-                    random_indices = random.sample(range(len(X)), sample_size)
-                    X = X[random_indices]
-                    Y = Y[random_indices]
-                    Z = Z[random_indices]
-                    vx = vx[random_indices]
-                    vy = vy[random_indices]
-                    vz = vz[random_indices]
-                else:
-                    sample_size = len(X)
+                # if len(X) > sample_size:
+                #     print(f"Sampling CGM as {sample_size} points")
+                #     random_indices = random.sample(range(len(X)), sample_size)
+                #     X = X[random_indices]
+                #     Y = Y[random_indices]
+                #     Z = Z[random_indices]
+                #     vx = vx[random_indices]
+                #     vy = vy[random_indices]
+                #     vz = vz[random_indices]
+                # else:
+                #     sample_size = len(X)
 
                 n_bins = 50
                 min_distance = grid_resolution.in_units("pc").value * 4
                 max_distance = window_size.in_units("pc").value
+
+                print("Starting VSF calculation", flush=True)
 
                 dist_array, v_diff_mean = VSF_3D(
                     X,
