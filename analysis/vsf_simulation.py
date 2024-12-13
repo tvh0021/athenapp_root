@@ -1,5 +1,5 @@
 import numpy as np
-from numba import njit, prange
+from numba import njit, prange, set_num_threads
 
 import yt
 import yt.units as u
@@ -100,8 +100,10 @@ def regrid_yt(
     return out_data, time
 
 
-# Things I have tried (unsuccesfully) to speed up the VSF calculation: using KD-trees to "cache" the distances between points.
+# Things I have tried (unsuccessfully) to speed up the VSF calculation: using KD-trees to "cache" the distances between points.
 # Use joblib to parallelize the VSF calculation. All either runs out of memory or takes longer than the current implementation.
+# For some reason, loading the data into a 2d array to do vector operations is slower than doing one dimension at a time.
+# Separating each bin into its own function doesn't speed up the calculation, either.
 @njit(parallel=True)
 def VSF_3D(
     X: np.ndarray,
@@ -112,8 +114,8 @@ def VSF_3D(
     vz: np.ndarray,
     min_distance: float = 1.0,
     max_distance: float = None,
-    n_bins=50,
-    order=1,
+    n_bins: int = 50,
+    order: int = 1,
 ):
     """Compute first-order velocity structure function (VSF) in 3D, with jit and parallelization
 
@@ -135,21 +137,19 @@ def VSF_3D(
     # find the maximum distance between any two points in the data
     # assuming the data is roughly of cubic shape (necessary for the quick computation of max distance)
     if max_distance is None:
-        max_distance = np.sqrt(
-            (X.max() - X.min()) ** 2
-            + (Y.max() - Y.min()) ** 2
-            + (Z.max() - Z.min()) ** 2
-        )
+        range_x = np.max(X) - np.min(X)
+        range_y = np.max(Y) - np.min(Y)
+        range_z = np.max(Z) - np.min(Z)
+        max_distance = np.sqrt(range_x**2 + range_y**2 + range_z**2)
 
     if order == 1:
         print("Calculating 1st order VSF")
-        print("Number of points: ", len(X))
     elif order == 2:
         print("Calculating 2nd order VSF")
-        print("Number of points: ", len(X))
     else:
         print("Order not valid, defaulting to 1st order VSF")
         order = 1
+    # print("Number of points: ", X.shape[0])
 
     # create bins of equal size in log space
     bins = 10.0 ** np.linspace(np.log10(min_distance), np.log10(max_distance), n_bins)
@@ -157,13 +157,12 @@ def VSF_3D(
 
     vsf_per_bin = np.zeros(n_bins - 1)
 
+    # X, Y, Z = positions[:, 0], positions[:, 1], positions[:, 2]
+    # vx, vy, vz = velocities[:, 0], velocities[:, 1], velocities[:, 2]
+    print("Finished bins : ")
+
     # loop through bins
-    for this_bin_index in prange(len(squared_bins) - 1):
-        if (this_bin_index) % 10 == 0:
-            print(f"bin {this_bin_index+1} of {len(squared_bins)} : START")
-            # print(
-            #     f"Distances in this bin: {float(bins[this_bin_index])}-{float(bins[this_bin_index+1])} pc"
-            # )
+    for this_bin_index in range(len(squared_bins) - 1):
         # for each point in the data, find the distance to all other points, then choose only the distances that are in the same bin
         bin_vel_sum = 0.0
         bin_count = 0
@@ -171,8 +170,8 @@ def VSF_3D(
         bin_lower = squared_bins[this_bin_index]
         bin_upper = squared_bins[this_bin_index + 1]
 
-        for point_a in range(len(X)):
-
+        # this implementation finish 1e5 points, 50 bins in 3 minutes 50 s on M1 Max
+        for point_a in prange(X.shape[0]):
             dx = X[point_a] - X
             dy = Y[point_a] - Y
             dz = Z[point_a] - Z
@@ -181,9 +180,10 @@ def VSF_3D(
             mask = (bin_lower < squared_distance_to_point_a) & (
                 squared_distance_to_point_a <= bin_upper
             )
-            mask[:point_a] = False  # don't calculate the same point again
+            mask[: point_a + 1] = False  # don't calculate the same point again
 
             if np.any(mask):
+
                 dvx = vx[point_a] - vx[mask]
                 dvy = vy[point_a] - vy[mask]
                 dvz = vz[point_a] - vz[mask]
@@ -198,15 +198,81 @@ def VSF_3D(
                     bin_vel_sum += np.sum(squared_velocity_difference_to_point_a)
 
                 bin_count += np.sum(mask)
-        if (this_bin_index) % 10 == 0:
-            print(f"bin {this_bin_index+1} of {len(squared_bins)} : END")
 
         if bin_count > 0:
             vsf_per_bin[this_bin_index] = bin_vel_sum / bin_count
         else:
             vsf_per_bin[this_bin_index] = 0.0
+        print(f"{this_bin_index+1}")
 
     return bins, vsf_per_bin
+
+
+@njit(parallel=True)
+def mean_velocity_difference(
+    X: np.ndarray,
+    Y: np.ndarray,
+    Z: np.ndarray,
+    vx: np.ndarray,
+    vy: np.ndarray,
+    vz: np.ndarray,
+    distance_range: tuple[np.float64, np.float64],
+    order,
+):
+    """Calculate the mean velocity difference in a given distance range
+
+    Args:
+        positions (np.ndarray): 3D positions of the points
+        velocities (np.ndarray): 3D velocities of the points
+        distance_range (tuple[float, float]): the range of distances to consider
+
+    Returns:
+        float: the mean velocity difference
+        int: the number of pairs of points within this distance range
+    """
+
+    bin_vel_sum = 0.0
+    bin_count = 0
+
+    for point_a in prange(X.shape[0]):
+        # distance_vector = positions - positions[point_a]
+        # squared_distance_to_point_a = np.sum(distance_vector**2, axis=1)
+
+        dx = X[point_a] - X
+        dy = Y[point_a] - Y
+        dz = Z[point_a] - Z
+        squared_distance_to_point_a = dx**2 + dy**2 + dz**2
+
+        mask = (distance_range[0] < squared_distance_to_point_a) & (
+            squared_distance_to_point_a <= distance_range[1]
+        )
+        mask[: point_a + 1] = False  # don't calculate the same point again
+
+        if np.any(mask):
+            # velocity_difference_to_point_a = (
+            #     velocities[mask] - velocities[point_a]
+            # )
+            # squared_velocity_difference_to_point_a = np.sum(
+            #     velocity_difference_to_point_a**2, axis=1
+            # )
+
+            dvx = vx[point_a] - vx[mask]
+            dvy = vy[point_a] - vy[mask]
+            dvz = vz[point_a] - vz[mask]
+            squared_velocity_difference_to_point_a = dvx**2 + dvy**2 + dvz**2
+
+            # compute sum of velocity differences
+            if order == 1:
+                bin_vel_sum += np.sum(np.sqrt(squared_velocity_difference_to_point_a))
+            else:
+                bin_vel_sum += np.sum(squared_velocity_difference_to_point_a)
+
+            bin_count += np.sum(mask)
+
+    if bin_count > 0:
+        return bin_vel_sum / bin_count
+    else:
+        return 0.0
 
 
 # unit conversions
@@ -630,6 +696,7 @@ if __name__ == "__main__":
                 max_distance = float(window_size.in_units("pc").value) * np.sqrt(2)
                 print("Starting VSF calculation", flush=True)
 
+                # set_num_threads(4)
                 dist_array, v_diff_mean = VSF_3D(
                     sixd_sample[:, 0],
                     sixd_sample[:, 1],
@@ -638,13 +705,17 @@ if __name__ == "__main__":
                     sixd_sample[:, 4],
                     sixd_sample[:, 5],
                     min_distance=min_distance,
-                    max_distance=max_distance,
+                    # max_distance=max_distance,
                     n_bins=args.n_bins,
                     order=args.vsf_order,
                 )
 
-                print("distance array: ", dist_array, flush=True)
-                print("v_diff_mean: ", v_diff_mean, flush=True)
+                # print("distance array: ", dist_array, flush=True)
+                # print("v_diff_mean: ", v_diff_mean, flush=True)
+                print(
+                    f"Distance at max v_diff_mean: {dist_array[np.argmax(v_diff_mean)]/1.e3:.2f} kpc",
+                    flush=True,
+                )
 
                 plt.figure(figsize=(10, 8), dpi=300)
                 plt.loglog(
@@ -662,11 +733,11 @@ if __name__ == "__main__":
                 # plt.show()
 
                 full_ell_range = np.logspace(
-                    np.log10(min_distance * 2 * 1.0e-3),
+                    np.log10(min_distance * 1.0e-3),
                     np.log10(max_distance / 2 * 1.0e-3),
                     50,
                 )
-                ell_1_2 = full_ell_range ** (0.5) * 1.0e2
+                ell_1_2 = full_ell_range ** (0.5) * 4.0e1
                 plt.plot(
                     full_ell_range,
                     ell_1_2,
@@ -677,7 +748,7 @@ if __name__ == "__main__":
                 )
                 # plt.text(5.e-2, 1.2e2, r'$\ell^{0.58}$', fontsize=18)
 
-                ell_1_3 = full_ell_range ** (1.0 / 3.0) * 1.0e2
+                ell_1_3 = full_ell_range ** (1.0 / 3.0) * 4.0e1
                 plt.plot(
                     full_ell_range,
                     ell_1_3,
