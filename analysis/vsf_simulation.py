@@ -71,6 +71,8 @@ def regrid_yt(
     """
 
     ds = yt.load(file_name, units_override=units_override)
+    time = int(ds.current_time.to("kyr").value)
+    print(f"Simulation time: {time} kyr", flush=True)
 
     out_data = dict()
     # datacube = np.zeros((dim, dim, dim, len(field)))
@@ -95,7 +97,7 @@ def regrid_yt(
     ):  # NOTE: can possibly speed this up with multiprocessing - but a memory bottleneck is possible
         out_data[field] = gridded_data[field].in_units(units_list[i]).value
 
-    return out_data
+    return out_data, time
 
 
 # Things I have tried (unsuccesfully) to speed up the VSF calculation: using KD-trees to "cache" the distances between points.
@@ -333,104 +335,9 @@ if __name__ == "__main__":
 
     for n in range(snapshots[0], snapshots[1] + 1):
         myfilename = makeFilename(path, base_ext, n=n)
-        ds = yt.load(myfilename, units_override=units_override)
-        time = int(ds.current_time.to("kyr"))
-        print(f"Simulation time: {time} kyr", flush=True)
+        # ds = yt.load(myfilename, units_override=units_override)
 
-        # # regridding data with athena built-in function
-        # use_athena_regrid = False
-        # if use_athena_regrid:
-        #     box_width = 1 * 1.0e-3  # Mpc
-        #     bounding_length = box_width / 2 / code_length
-        #     datadict = athdf(
-        #         myfilename,
-        #         quantities=("vel1", "vel2", "vel3", "press", "rho"),
-        #         level=9,
-        #         subsample=True,
-        #         x1_min=-bounding_length,
-        #         x1_max=bounding_length,
-        #         x2_min=-bounding_length,
-        #         x2_max=bounding_length,
-        #         x3_min=-bounding_length,
-        #         x3_max=bounding_length,
-        #     )
-
-        #     print("Regridding done", flush=True)
-        #     # print(datadict.keys(), flush=True)
-        #     print(datadict["vel1"].shape, flush=True)
-
-        #     datacube = np.empty(
-        #         (
-        #             datadict["vel1"].shape[0],
-        #             datadict["vel1"].shape[1],
-        #             datadict["vel1"].shape[2],
-        #             5,
-        #         ),
-        #         dtype=np.float64,
-        #     )
-        #     datacube[:, :, :, 0] = datadict["vel3"]
-        #     datacube[:, :, :, 1] = datadict["vel2"]
-        #     datacube[:, :, :, 2] = datadict["vel1"]
-        #     datacube[:, :, :, 3] = datadict["press"]
-        #     datacube[:, :, :, 4] = datadict["rho"]
-
-        #     # convert these into physical units and calculate the temperature
-        #     velocities = (
-        #         datacube[:, :, :, 0:3] / kms_Astronomical * code_velocity
-        #     )  # in km/s
-        #     velocity_magnitude = np.sqrt(
-        #         velocities[:, :, :, 0] ** 2
-        #         + velocities[:, :, :, 1] ** 2
-        #         + velocities[:, :, :, 2] ** 2
-        #     )
-        #     print(
-        #         "Velocity range (km/s): ",
-        #         np.min(velocity_magnitude),
-        #         np.max(velocity_magnitude),
-        #         flush=True,
-        #     )
-
-        #     # calculate temperature
-        #     # print("Density range (code units): ", np.min(datacube[:,:,:,4]), np.max(datacube[:,:,:,4]), flush=True)
-        #     # print("conversion: ", mu * hydrogenMassAstronomical, flush=True)
-        #     number_density_code = datacube[:, :, :, 4] / (mu * hydrogenMassAstronomical)
-        #     print(
-        #         "Number density range (cm**-3): ",
-        #         np.min(number_density_code) * (code_volume**3),
-        #         np.max(number_density_code) * (code_volume**3),
-        #         flush=True,
-        #     )
-        #     temperature = (
-        #         datacube[:, :, :, 3]
-        #         / (number_density_code * codeBoltzmannConst)
-        #         * code_temperature
-        #     )
-        #     print(
-        #         "Temperature range (K): ",
-        #         np.min(temperature),
-        #         np.max(temperature),
-        #         flush=True,
-        #     )
-
-        #     if False:
-        #         save_name = f"regridded_prim_{time}Myr_{box_width}Mpc.npy"
-        #         np.save(path + save_name, datacube)
-        #         print(f"Regridded raw data saved in {path} as {save_name}", flush=True)
-
-        #     if False:
-        #         save_name1 = f"regridded_vel_{time}Myr_{box_width}Mpc.npy"
-        #         np.save(path + save_name1, velocities)
-        #         save_name2 = f"regridded_temperature_{time}Myr_{box_width}Mpc.npy"
-        #         np.save(path + save_name2, temperature)
-        #         print(
-        #             f"Regridded processed data saved in {path} as {save_name1} and {save_name2}",
-        #             flush=True,
-        #         )
-
-        # else:
-        # regridding data with yt built-in function
-        # 15m for 128^3 on 1 Rome node, 2h20m for 256^3 (for one field)
-        datadict = regrid_yt(
+        datadict, time = regrid_yt(
             myfilename,
             units_override,
             fields=["velocity_x", "velocity_y", "velocity_z", "density"],
@@ -447,7 +354,15 @@ if __name__ == "__main__":
         save_to_file = False
 
         if save_to_file:
-            save_name = f"regridded_data_{time}kyr_{window_size.value}kpc.pkl"
+            if n < 10:
+                file_n = "0000" + str(n)
+            elif (n >= 10) & (n < 100):
+                file_n = "000" + str(n)
+            elif n >= 1000:
+                file_n = "0" + str(n)
+            else:
+                file_n = "00" + str(n)
+            save_name = f"regridded_data_{file_n}_{window_size.value}kpc.pkl"
             with open(path + save_name, "wb") as f:
                 pickle.dump(datadict, f)
             print(f"Regridded data saved in {path} as {save_name}", flush=True)
@@ -666,7 +581,8 @@ if __name__ == "__main__":
                 plt.ylim(9.0e-1, 1.4e3)
                 plt.xlabel(r"$\ell$ (kpc)", fontsize=22)
                 plt.ylabel(
-                    r"$\langle \delta \mathbf{v} \rangle$ (km s$^{-1}$)", fontsize=22
+                    r"$\langle \delta \mathbf{v} \rangle$ (km s$^{-1}$)",
+                    fontsize=22,
                 )
                 plt.title(f"VSF at {time} Myr, f = {f_kin}", fontsize=22)
                 plt.grid()
@@ -694,12 +610,6 @@ if __name__ == "__main__":
                 sixd_cgm[:, 4] = Vy[cgm_mask]
                 sixd_cgm[:, 5] = Vz[cgm_mask]
 
-                # X = x_pos[cgm_mask]
-                # Y = y_pos[cgm_mask]
-                # Z = z_pos[cgm_mask]
-                # vx = Vx[cgm_mask]
-                # vy = Vy[cgm_mask]
-                # vz = Vz[cgm_mask]
                 print("Number of cells in the CGM: ", sixd_cgm.shape[0], flush=True)
 
                 sample_size = args.sample_size
@@ -708,24 +618,16 @@ if __name__ == "__main__":
                     sixd_sample = sixd_cgm
                 else:
                     sample_size = int(sample_size)
-                    # random.seed(42)
 
                     print(f"Sampling CGM as {sample_size} points")
                     random_indices = np.random.choice(
                         sixd_cgm.shape[0], sample_size, replace=False
                     )
                     sixd_sample = sixd_cgm[random_indices, :]
-                    # X = X[random_indices]
-                    # Y = Y[random_indices]
-                    # Z = Z[random_indices]
-                    # vx = vx[random_indices]
-                    # vy = vy[random_indices]
-                    # vz = vz[random_indices]
 
                 # n_bins = args.n_bins
                 min_distance = grid_resolution.in_units("pc").value * 4
-                max_distance = float(window_size.in_units("pc").value)
-
+                max_distance = float(window_size.in_units("pc").value) * np.sqrt(2)
                 print("Starting VSF calculation", flush=True)
 
                 dist_array, v_diff_mean = VSF_3D(
@@ -740,6 +642,7 @@ if __name__ == "__main__":
                     n_bins=args.n_bins,
                     order=args.vsf_order,
                 )
+
                 print("distance array: ", dist_array, flush=True)
                 print("v_diff_mean: ", v_diff_mean, flush=True)
 
@@ -797,13 +700,13 @@ if __name__ == "__main__":
                 plt.ylim(v_diff_mean.min() / 1.5, v_diff_mean.max() * 1.2)
                 plt.xlabel(r"$\ell$ (kpc)", fontsize=22)
                 plt.ylabel(
-                    r"$\langle \delta \mathbf{v} \rangle$ (km s$^{-1}$)", fontsize=22
+                    r"$\langle \delta \mathbf{v} \rangle$ (km s$^{-1}$)",
+                    fontsize=22,
                 )
                 plt.title(f"VSF at {time} kyr, f = {f_kin}", fontsize=22)
                 plt.grid()
                 plt.legend(fontsize=20)
 
-                # path += "vsf-1kpc/"
                 if n < 10:
                     file_n = "0000" + str(n)
                 elif (n >= 10) & (n < 100):
