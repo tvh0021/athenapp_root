@@ -197,11 +197,11 @@ def VSF_3D(
             # the number of points in the distance bin is the weight for the mean calculation later
             weights[point_a] = len(squared_velocity_difference_to_point_a)
 
-        if this_bin_index % 10 == 0:
-            print(f"bin {this_bin_index+1} of {len(squared_bins)} : END")
-            # print(
-            #     f"Mean velocity difference at this bin: {np.mean(mean_velocity_differences)} km/s"
-            # )
+        # if this_bin_index % 10 == 0:
+        #     print(f"bin {this_bin_index+1} of {len(squared_bins)} : END")
+        #     # print(
+        #     #     f"Mean velocity difference at this bin: {np.mean(mean_velocity_differences)} km/s"
+        #     # )
 
         # calculate the mean of the velocity differences in this bin
         mean_velocity_differences[weights == 0] = (
@@ -300,6 +300,24 @@ if __name__ == "__main__":
         type=float,
         default=5.0e-25,
         help="density cut for the CGM in g/cm^3",
+    )
+    parser.add_argument(
+        "--vsf_order",
+        type=int,
+        default=1,
+        help="order of the VSF calculation (1 or 2)",
+    )
+    parser.add_argument(
+        "--n_bins",
+        type=int,
+        default=50,
+        help="number of bins for the VSF calculation",
+    )
+    parser.add_argument(
+        "--sample_size",
+        type=int,
+        default=None,
+        help="number of points to sample for the VSF calculation",
     )
     args = parser.parse_args()
 
@@ -677,45 +695,61 @@ if __name__ == "__main__":
                 print("Figure saved to ", path, flush=True)
 
             else:
-                X = x_pos[cgm_mask]
-                Y = y_pos[cgm_mask]
-                Z = z_pos[cgm_mask]
-                vx = Vx[cgm_mask]
-                vy = Vy[cgm_mask]
-                vz = Vz[cgm_mask]
-                print("Number of cells in the CGM: ", len(X), flush=True)
 
-                # random.seed(42)
-                # sample_size = int(1.0e5)
+                # mask data to separate CGM
+                sixd_cgm = np.zeros((int(np.sum(cgm_mask)), 6), dtype=np.float64)
+                sixd_cgm[:, 0] = x_pos[cgm_mask]
+                sixd_cgm[:, 1] = y_pos[cgm_mask]
+                sixd_cgm[:, 2] = z_pos[cgm_mask]
+                sixd_cgm[:, 3] = Vx[cgm_mask]
+                sixd_cgm[:, 4] = Vy[cgm_mask]
+                sixd_cgm[:, 5] = Vz[cgm_mask]
 
-                # if len(X) > sample_size:
-                #     print(f"Sampling CGM as {sample_size} points")
-                #     random_indices = random.sample(range(len(X)), sample_size)
-                #     X = X[random_indices]
-                #     Y = Y[random_indices]
-                #     Z = Z[random_indices]
-                #     vx = vx[random_indices]
-                #     vy = vy[random_indices]
-                #     vz = vz[random_indices]
-                # else:
-                #     sample_size = len(X)
+                # X = x_pos[cgm_mask]
+                # Y = y_pos[cgm_mask]
+                # Z = z_pos[cgm_mask]
+                # vx = Vx[cgm_mask]
+                # vy = Vy[cgm_mask]
+                # vz = Vz[cgm_mask]
+                print("Number of cells in the CGM: ", sixd_cgm.shape[0], flush=True)
 
-                n_bins = 50
+                sample_size = args.sample_size
+                if sample_size is None:
+                    sample_size = len(X)
+                    sixd_sample = sixd_cgm
+                else:
+                    sample_size = int(sample_size)
+                    # random.seed(42)
+
+                    print(f"Sampling CGM as {sample_size} points")
+                    random_indices = np.random.choice(
+                        sixd_cgm.shape[0], sample_size, replace=False
+                    )
+                    sixd_sample = sixd_cgm[random_indices, :]
+                    # X = X[random_indices]
+                    # Y = Y[random_indices]
+                    # Z = Z[random_indices]
+                    # vx = vx[random_indices]
+                    # vy = vy[random_indices]
+                    # vz = vz[random_indices]
+
+                # n_bins = args.n_bins
                 min_distance = grid_resolution.in_units("pc").value * 4
                 max_distance = window_size.in_units("pc").value
 
                 print("Starting VSF calculation", flush=True)
 
                 dist_array, v_diff_mean = VSF_3D(
-                    X,
-                    Y,
-                    Z,
-                    vx,
-                    vy,
-                    vz,
+                    sixd_sample[:, 0],
+                    sixd_sample[:, 1],
+                    sixd_sample[:, 2],
+                    sixd_sample[:, 3],
+                    sixd_sample[:, 4],
+                    sixd_sample[:, 5],
                     min_distance=min_distance,
                     # max_distance=max_distance,
-                    n_bins=n_bins,
+                    n_bins=args.n_bins,
+                    order=args.vsf_order,
                 )
                 print("distance array: ", dist_array, flush=True)
                 print("v_diff_mean: ", v_diff_mean, flush=True)
@@ -789,6 +823,10 @@ if __name__ == "__main__":
                     file_n = "0" + str(n)
                 else:
                     file_n = "00" + str(n)
-                plt.savefig(path + f"VSF_{file_n}_{window_size.value}.png")
 
-                print("Figure saved to ", path, flush=True)
+                name = (
+                    f"VSF_{file_n}_{window_size.value}_d{grid_size}_s{sample_size}.png"
+                )
+                plt.savefig(path + name)
+
+                print(f"Figure saved to {path} as {name}", flush=True)
