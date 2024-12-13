@@ -156,7 +156,7 @@ def VSF_3D(
     vsf_per_bin = np.zeros(n_bins - 1)
 
     # loop through bins
-    for this_bin_index in range(len(squared_bins) - 1):
+    for this_bin_index in prange(len(squared_bins) - 1):
         if (this_bin_index) % 10 == 0:
             print(f"bin {this_bin_index+1} of {len(squared_bins)} : START")
             # print(
@@ -169,7 +169,7 @@ def VSF_3D(
         bin_lower = squared_bins[this_bin_index]
         bin_upper = squared_bins[this_bin_index + 1]
 
-        for point_a in prange(len(X)):
+        for point_a in range(len(X)):
 
             dx = X[point_a] - X
             dy = Y[point_a] - Y
