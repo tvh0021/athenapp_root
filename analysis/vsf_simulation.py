@@ -98,6 +98,8 @@ def regrid_yt(
     return out_data
 
 
+# Things I have tried (unsuccesfully) to speed up the VSF calculation: using KD-trees to "cache" the distances between points.
+# Use joblib to parallelize the VSF calculation. All either runs out of memory or takes longer than the current implementation.
 @njit(parallel=True)
 def VSF_3D(
     X: np.ndarray,
@@ -129,13 +131,14 @@ def VSF_3D(
         (np.ndarray, np.ndarray): 1D arrays of the distance bins (pc) and the VSF (km/s) per bin
     """
     # find the maximum distance between any two points in the data
-    # assuming the data is roughly of cubic shape (neccessary for the quick computation of max distance)
-    if max_distance is None:
-        max_distance = np.sqrt(
-            (X.max() - X.min()) ** 2
-            + (Y.max() - Y.min()) ** 2
-            + (Z.max() - Z.min()) ** 2
-        )
+    # assuming the data is roughly of cubic shape (necessary for the quick computation of max distance)
+    # if max_distance is None:
+    #     max_distance = np.sqrt(
+    #         (X.max() - X.min()) ** 2
+    #         + (Y.max() - Y.min()) ** 2
+    #         + (Z.max() - Z.min()) ** 2
+    #     )
+    # max_distance = float(max_distance)
 
     if order == 1:
         print("Calculating 1st order VSF")
@@ -161,59 +164,44 @@ def VSF_3D(
             #     f"Distances in this bin: {float(bins[this_bin_index])}-{float(bins[this_bin_index+1])} pc"
             # )
         # for each point in the data, find the distance to all other points, then choose only the distances that are in the same bin
-        weights = np.zeros(len(X))
-        mean_velocity_differences = np.zeros(len(X))
+        bin_vel_sum = 0.0
+        bin_count = 0
+
+        bin_lower = squared_bins[this_bin_index]
+        bin_upper = squared_bins[this_bin_index + 1]
 
         for point_a in prange(len(X)):
-            squared_distance_to_point_a = (
-                (X[point_a] - X) ** 2 + (Y[point_a] - Y) ** 2 + (Z[point_a] - Z) ** 2
-            )
-            elements_in_this_bin = np.full(len(squared_distance_to_point_a), False)
-            elements_in_this_bin[
-                (squared_bins[this_bin_index] < squared_distance_to_point_a)
-                & (squared_distance_to_point_a <= squared_bins[this_bin_index + 1])
-            ] = True
-            # don't calculate the same point again
-            elements_in_this_bin[:point_a] = False
 
-            squared_velocity_difference_to_point_a = (
-                (vx[point_a] - vx[elements_in_this_bin]) ** 2
-                + (vy[point_a] - vy[elements_in_this_bin]) ** 2
-                + (vz[point_a] - vz[elements_in_this_bin]) ** 2
-            )
+            dx = X[point_a] - X
+            dy = Y[point_a] - Y
+            dz = Z[point_a] - Z
+            squared_distance_to_point_a = dx**2 + dy**2 + dz**2
 
-            # calculate the mean of the velocity differences
-            if order == 1:
-                if np.sum(elements_in_this_bin) == 0:
-                    mean_velocity_differences[point_a] = 0.0
-                else:
-                    mean_velocity_differences[point_a] = np.mean(
+            mask = (bin_lower < squared_distance_to_point_a) & (
+                squared_distance_to_point_a <= bin_upper
+            )
+            mask[:point_a] = False  # don't calculate the same point again
+
+            if np.any(mask):
+                dvx = vx[point_a] - vx[mask]
+                dvy = vy[point_a] - vy[mask]
+                dvz = vz[point_a] - vz[mask]
+                squared_velocity_difference_to_point_a = dvx**2 + dvy**2 + dvz**2
+
+                # compute VSF
+                if order == 1:
+                    bin_vel_sum += np.sum(
                         np.sqrt(squared_velocity_difference_to_point_a)
                     )
-            else:
-                mean_velocity_differences[point_a] = np.mean(
-                    squared_velocity_difference_to_point_a
-                )
-            # the number of points in the distance bin is the weight for the mean calculation later
-            weights[point_a] = len(squared_velocity_difference_to_point_a)
+                else:
+                    bin_vel_sum += np.sum(squared_velocity_difference_to_point_a)
 
-        # if this_bin_index % 10 == 0:
-        #     print(f"bin {this_bin_index+1} of {len(squared_bins)} : END")
-        #     # print(
-        #     #     f"Mean velocity difference at this bin: {np.mean(mean_velocity_differences)} km/s"
-        #     # )
+                bin_count += np.sum(mask)
 
-        # calculate the mean of the velocity differences in this bin
-        mean_velocity_differences[weights == 0] = (
-            0.0  # set the mean to 0 if there are no points in the bin
-        )
-
-        if np.max(weights) == 0:  # if there are no points in the bin, set the VSF to 0
-            vsf_per_bin[this_bin_index] = 0.0
+        if bin_count > 0:
+            vsf_per_bin[this_bin_index] = bin_vel_sum / bin_count
         else:
-            vsf_per_bin[this_bin_index] = np.average(
-                mean_velocity_differences, weights=weights
-            )
+            vsf_per_bin[this_bin_index] = 0.0
 
     return bins, vsf_per_bin
 
@@ -747,7 +735,7 @@ if __name__ == "__main__":
                     sixd_sample[:, 4],
                     sixd_sample[:, 5],
                     min_distance=min_distance,
-                    # max_distance=max_distance,
+                    max_distance=max_distance,
                     n_bins=args.n_bins,
                     order=args.vsf_order,
                 )
@@ -824,9 +812,7 @@ if __name__ == "__main__":
                 else:
                     file_n = "00" + str(n)
 
-                name = (
-                    f"VSF_{file_n}_{window_size.value}_d{grid_size}_s{sample_size}.png"
-                )
+                name = f"VSF_{file_n}_{window_size.value}_d{grid_size}_s{sample_size}_kdt.png"
                 plt.savefig(path + name)
 
                 print(f"Figure saved to {path} as {name}", flush=True)
