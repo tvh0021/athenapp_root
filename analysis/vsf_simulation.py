@@ -132,13 +132,12 @@ def VSF_3D(
     """
     # find the maximum distance between any two points in the data
     # assuming the data is roughly of cubic shape (necessary for the quick computation of max distance)
-    # if max_distance is None:
-    #     max_distance = np.sqrt(
-    #         (X.max() - X.min()) ** 2
-    #         + (Y.max() - Y.min()) ** 2
-    #         + (Z.max() - Z.min()) ** 2
-    #     )
-    # max_distance = float(max_distance)
+    if max_distance is None:
+        max_distance = np.sqrt(
+            (X.max() - X.min()) ** 2
+            + (Y.max() - Y.min()) ** 2
+            + (Z.max() - Z.min()) ** 2
+        )
 
     if order == 1:
         print("Calculating 1st order VSF")
@@ -197,6 +196,8 @@ def VSF_3D(
                     bin_vel_sum += np.sum(squared_velocity_difference_to_point_a)
 
                 bin_count += np.sum(mask)
+        if (this_bin_index) % 10 == 0:
+            print(f"bin {this_bin_index+1} of {len(squared_bins)} : END")
 
         if bin_count > 0:
             vsf_per_bin[this_bin_index] = bin_vel_sum / bin_count
@@ -614,7 +615,7 @@ if __name__ == "__main__":
                     vy,
                     vz,
                     min_distance=min_distance,
-                    max_distance=max_distance,
+                    # max_distance=max_distance,
                     n_bins=n_bins,
                 )
 
@@ -703,7 +704,7 @@ if __name__ == "__main__":
 
                 sample_size = args.sample_size
                 if sample_size is None:
-                    sample_size = len(X)
+                    sample_size = sixd_cgm.shape[0]
                     sixd_sample = sixd_cgm
                 else:
                     sample_size = int(sample_size)
@@ -723,7 +724,7 @@ if __name__ == "__main__":
 
                 # n_bins = args.n_bins
                 min_distance = grid_resolution.in_units("pc").value * 4
-                max_distance = window_size.in_units("pc").value
+                max_distance = float(window_size.in_units("pc").value)
 
                 print("Starting VSF calculation", flush=True)
 
@@ -812,7 +813,9 @@ if __name__ == "__main__":
                 else:
                     file_n = "00" + str(n)
 
-                name = f"VSF_{file_n}_{window_size.value}_d{grid_size}_s{sample_size}_kdt.png"
+                name = (
+                    f"VSF_{file_n}_{window_size.value}_d{grid_size}_s{sample_size}.png"
+                )
                 plt.savefig(path + name)
 
                 print(f"Figure saved to {path} as {name}", flush=True)
