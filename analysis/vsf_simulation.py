@@ -66,7 +66,7 @@ def regrid_yt(
         units_override (dict): dict with conversion between physical units and code units
         fields (list[str], optional): the fields being translated to un i. Defaults to ["velocity_x", "velocity_y", "velocity_z", "temperature"].
         dim (list[int], optional): the number of cells in each direction (x, y, z). Defaults to [256, 256, 256].
-        bounding_length (list[float], optional): the width of the regrided window in pc in each direction (x, y, z). Defaults to [1., 1., 1.].
+        bounding_length (list[float], optional): the width of the regridded window in pc in each direction (x, y, z). Defaults to [1., 1., 1.].
         center (list[float], optional): the center of the new grid in pc. Defaults to [0., 0., 0.].
     """
 
@@ -104,6 +104,7 @@ def regrid_yt(
 # Use joblib to parallelize the VSF calculation. All either runs out of memory or takes longer than the current implementation.
 # For some reason, loading the data into a 2d array to do vector operations is slower than doing one dimension at a time.
 # Separating each bin into its own function doesn't speed up the calculation, either.
+## IDEA: iterate through each point, compute the distance and velocity difference to all other points, then populate ALL bins at once.
 @njit(parallel=True)
 def VSF_3D(
     X: np.ndarray,
@@ -170,7 +171,9 @@ def VSF_3D(
         bin_lower = squared_bins[this_bin_index]
         bin_upper = squared_bins[this_bin_index + 1]
 
-        # this implementation finish 1e5 points, 50 bins in 3 minutes 50 s on M1 Max
+        # this implementation finish 1e5 points, 50 bins in 3 minutes 50 s on M1 Max and 40 s on 1 Rome node
+        # this implementation finish 2e5 points, 50 bins in 1 minute 43 s; 4e5 points, 50 bins in 1 hour 1 minute on 1 Rome node
+
         for point_a in prange(X.shape[0]):
             dx = X[point_a] - X
             dy = Y[point_a] - Y
