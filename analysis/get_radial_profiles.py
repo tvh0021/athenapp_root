@@ -296,9 +296,9 @@ def emissivityFromTemperature(temperature):
             np.interp(logTemperature, logTemperatureArray, logEmissivityHydroArray)
         )
 
-    emissivityAstronomical = emissivityCGS / (
-        solarMassCGS * pow(MpcCGS, 5) * pow(MyrCGS, -3)
-    )
+    # emissivityAstronomical = emissivityCGS / (
+    #     solarMassCGS * pow(MpcCGS, 5) * pow(MyrCGS, -3)
+    # )
 
     return emissivityCGS
 
@@ -312,199 +312,10 @@ import matplotlib.pyplot as plt
 
 interpLambdaFunction = interp1d(tempList, lambdaListCGS)
 
-from yt import derived_field
+# from yt import derived_field
 
 SMBHMass = 6.5e9 * units.Msun
 r_g = phc.G * SMBHMass / phc.c**2
-
-
-@derived_field(
-    name="cooling_time", sampling_type="cell", units="Myr", force_override=True
-)
-def _cooling_time(field, data):
-    return (
-        (5 / 2)
-        * phc.kboltz
-        * (data["gas", "temperature"].in_units("K"))
-        / (
-            (data["gas", "number_density"].to("cm**-3"))
-            * np.interp(
-                data["gas", "temperature"].in_units("K").value, tempList, lambdaListCGS
-            )
-            * (units.erg / units.s * units.cm**3)
-        )
-    )
-
-
-@derived_field(
-    name="sound_crossing_time", sampling_type="cell", units="Myr", force_override=True
-)
-def _sound_crossing_time(field, data):
-    return data["gas", "dx"] / np.sqrt(
-        data.ds.gamma * data["gas", "pressure"] / data["gas", "density"]
-    )
-
-
-@derived_field(
-    name="cooling_rate", sampling_type="cell", units="erg/s/cm**3", force_override=True
-)
-def _cooling_rate(field, data):
-    return (
-        data["gas", "number_density"].in_units("cm**-3") ** 2
-        * np.interp(data["gas", "temperature"].to("K").value, tempList, lambdaListCGS)
-        * (units.erg / units.s * units.cm**3)
-    )
-
-
-@derived_field(name="cooling_ratio", sampling_type="cell", force_override=True)
-def _cooling_ratio(field, data):
-    return data["gas", "cooling_time"] / data["gas", "sound_crossing_time"]
-
-
-@derived_field(
-    name="keplerian_speed", sampling_type="cell", units="Mpc/Myr", force_override=True
-)
-def _keplerian_speed(field, data):
-    return np.sqrt(phc.G * SMBHMass * phc.msun / data["index", "radius"])
-
-
-@derived_field(
-    name="keplerian_specific_angular_momentum",
-    sampling_type="cell",
-    units="Mpc**2/Myr",
-    force_override=True,
-)
-def _keplerian_specific_angular_momentum(field, data):
-    return data["gas", "keplerian_speed"] * data["index", "radius"]
-
-
-@derived_field(
-    name="normalized_specific_angular_momentum_x",
-    sampling_type="cell",
-    force_override=True,
-)
-def _normalized_specific_angular_momentum_x(field, data):
-    return (
-        data["gas", "specific_angular_momentum_x"]
-        / data["gas", "keplerian_specific_angular_momentum"]
-    )
-
-
-@derived_field(
-    name="normalized_specific_angular_momentum_y",
-    sampling_type="cell",
-    force_override=True,
-)
-def _normalized_specific_angular_momentum_y(field, data):
-    return (
-        data["gas", "specific_angular_momentum_y"]
-        / data["gas", "keplerian_specific_angular_momentum"]
-    )
-
-
-@derived_field(
-    name="normalized_specific_angular_momentum_z",
-    sampling_type="cell",
-    force_override=True,
-)
-def _normalized_specific_angular_momentum_z(field, data):
-    return (
-        data["gas", "specific_angular_momentum_z"]
-        / data["gas", "keplerian_specific_angular_momentum"]
-    )
-
-
-@derived_field(
-    name="keplerian_angular_momentum", sampling_type="cell", force_override=True
-)
-def _keplerian_angular_momentum(field, data):
-    return data["gas", "mass"] * data["gas", "keplerian_specific_angular_momentum"]
-
-
-@derived_field(
-    name="normalized_angular_momentum_x", sampling_type="cell", force_override=True
-)
-def _normalized_angular_momentum_x(field, data):
-    return data["gas", "angular_momentum_x"] / data["gas", "keplerian_angular_momentum"]
-
-
-@derived_field(
-    name="normalized_angular_momentum_y", sampling_type="cell", force_override=True
-)
-def _normalized_angular_momentum_y(field, data):
-    return data["gas", "angular_momentum_y"] / data["gas", "keplerian_angular_momentum"]
-
-
-@derived_field(
-    name="normalized_angular_momentum_z", sampling_type="cell", force_override=True
-)
-def _normalized_angular_momentum_z(field, data):
-    return data["gas", "angular_momentum_z"] / data["gas", "keplerian_angular_momentum"]
-
-
-@derived_field(
-    name="free_fall_time", sampling_type="cell", units="Myr", force_override=True
-)
-def _free_fall_time(field, data):
-    return (
-        np.pi
-        / 2
-        * data["index", "radius"] ** (3 / 2)
-        / np.sqrt(2 * phc.G * (SMBHMass * phc.msun + data["gas", "mass"]))
-    )
-
-
-@derived_field(name="free_fall_ratio", sampling_type="cell", force_override=True)
-def _free_fall_ratio(field, data):
-    return data["gas", "cooling_time"] / data["gas", "free_fall_time"]
-
-
-@derived_field(
-    name="density_squared",
-    sampling_type="cell",
-    units="msun**2*Mpc**-6",
-    force_override=True,
-)
-def _density_squared(field, data):
-    return data["gas", "density"] ** 2
-
-
-@derived_field(name="angle_theta", sampling_type="cell", force_override=True)
-def _angle_theta(field, data):
-    return np.arccos(data["index", "z"] / data["index", "radius"])
-
-
-@derived_field(name="angle_phi", sampling_type="cell", force_override=True)
-def _angle_phi(field, data):
-    return np.arctan2(data["index", "y"], data["index", "x"])
-
-
-@derived_field(name="vr", sampling_type="cell", units="km/s", force_override=True)
-def _vr(field, data):
-    return (
-        data["gas", "velocity_x"] * data["index", "x"]
-        + data["gas", "velocity_y"] * data["index", "y"]
-        + data["gas", "velocity_z"] * data["index", "z"]
-    ) / data["index", "radius"]
-
-
-@derived_field(name="vtheta", sampling_type="cell", units="1/s", force_override=True)
-def _vtheta(field, data):
-    return (
-        data["gas", "vr"] * data["gas", "angle_theta"] - data["gas", "velocity_z"]
-    ) / (data["index", "radius"] * np.sin(data["gas", "angle_theta"]))
-
-
-@derived_field(name="vphi", sampling_type="cell", units="km/s", force_override=True)
-def _vphi(field, data):
-    return data["gas", "velocity_y"] * np.cos(data["gas", "angle_phi"]) - data[
-        "gas", "velocity_x"
-    ] * np.sin(data["gas", "angle_phi"])
-
-
-@derived_field(name="vtangent", sampling_type="cell", units="km/s", force_override=True)
-def _vtangent(field, data):
-    return np.sqrt(data["gas", "velocity_magnitude"] ** 2 - data["gas", "vr"] ** 2)
 
 
 def makeFilename(pathName: str, baseExtension: str, n: int) -> str:
@@ -788,37 +599,6 @@ def get_multiple_mdots(
 
 
 def main():
-    # lookup_units = {'number_density': 'cm**-3',
-    #                 'pressure': 'Pa',
-    #                 'density': 'g/cm**3',
-    #                 'temperature': 'K',
-    #                 'normalized_angular_momentum_x':'',
-    #                 'normalized_angular_momentum_y':'',
-    #                 'normalized_angular_momentum_z':'',
-    #                 'vr':'km/s',
-    #                 'vtheta':'km/s',
-    #                 'vphi':'km/s',
-    #                 'vtangent':'km/s',
-    #                 'cooling_time':'Myr',
-    #                 'sound_crossing_time':'Myr',
-    #                 'cooling_rate':'erg/s/cm**3',
-    #                 'cooling_ratio':'',
-    #                 'normalized_specific_angular_momentum_x':'',
-    #                 'normalized_specific_angular_momentum_y':'',
-    #                 'normalized_specific_angular_momentum_z':'',
-    #                 'free_fall_time':'Myr',
-    #                 'free_fall_ratio':'',
-    #                 'specific_angular_momentum_x':'km**2/s',
-    #                 'specific_angular_momentum_y':'km**2/s',
-    #                 'specific_angular_momentum_z':'km**2/s',
-    #                 'angular_momentum_x':'km**2/s',
-    #                 'angular_momentum_y':'km**2/s',
-    #                 'angular_momentum_z':'km**2/s',
-    #                 'm_dot_in_cold':'Msun/yr',
-    #                 'm_dot_in_hot':'Msun/yr',
-    #                 'm_dot_out_cold':'Msun/yr',
-    #                 'm_dot_out_hot':'Msun/yr',}
-
     parser = argparse.ArgumentParser(
         description="Extract data from the output of the simulation"
     )
