@@ -559,6 +559,7 @@ def get_multiple_mdots(
     start_nfile: int,
     stop_nfile: int,
     distances: np.ndarray,
+    nproc: int = cpu_count(),
 ):
     """With multiprocessing, generate multiple snapshots of the simulation data at once and save them to the specified location
 
@@ -574,16 +575,15 @@ def get_multiple_mdots(
         dict: dictionary containing the radial profiles
     """
 
-    number_of_processes = cpu_count()
-    if number_of_processes > 20:
+    if nproc > 20:
         print("More than 20 cores is available but might run out of memory", flush=True)
-        number_of_processes = 20
+        nproc = 20
 
-    print("Saving snapshots using {} cores".format(number_of_processes), flush=True)
+    print("Saving snapshots using {} cores".format(nproc), flush=True)
 
     total_data_save = {}
 
-    with Pool(processes=number_of_processes) as p:
+    with Pool(processes=nproc) as p:
         items = [
             (location, base_ext, k, distances)
             for k in range(start_nfile, stop_nfile + 1)
@@ -746,7 +746,7 @@ def main():
         distances = sorted_dict[list(sorted_dict.keys())[0]][0, :]
         print("Getting mass flow rates")
         m_dot_data = get_multiple_mdots(
-            path, base_ext, start_nfile, stop_nfile, distances
+            path, base_ext, start_nfile, stop_nfile, distances, nproc,
         )
         sorted_m_dot = dict(sorted(m_dot_data.items()))
         sorted_m_dot["fields"] = [
