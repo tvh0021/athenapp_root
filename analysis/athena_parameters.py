@@ -54,6 +54,8 @@ lookup_units = {
     "pressure_gradient_x": "Pa/cm",
     "pressure_gradient_y": "Pa/cm",
     "pressure_gradient_z": "Pa/cm",
+    "gravitational_potential": "cm**2/s**2",
+    "bondi_ratio": "",
 }
 
 
@@ -367,3 +369,22 @@ def _vphi(field, data):
 @derived_field(name="vtangent", sampling_type="cell", units="km/s", force_override=True)
 def _vtangent(field, data):
     return np.sqrt(data["gas", "velocity_magnitude"] ** 2 - data["gas", "vr"] ** 2)
+
+
+@derived_field(
+    name="gravitational_potential",
+    sampling_type="cell",
+    units="cm**2/s**2",
+    force_override=True,
+)
+def _gravitational_potential(field, data):
+    return phc.G * SMBHMass / data["index", "radius"]
+
+
+@derived_field(
+    name="bondi_ratio", sampling_type="cell", units="dimensionless", force_override=True
+)
+def _bondi_ratio(field, data):
+    return (
+        data["gas", "gravitational_potential"] / data["gas", "specific_thermal_energy"]
+    )

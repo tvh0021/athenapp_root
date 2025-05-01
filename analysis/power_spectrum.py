@@ -123,7 +123,8 @@ def compute_spec_3d(cube: np.ndarray, resolution: float = 1):
     # compensate
     # sp_int *= ks**(3.0)
     # sp_int *= 4.0 * np.pi * ks * ks  # 3D 4pi k^2 element
-    sp_int *= 2.0 * np.pi * ks  # 2D 2pi k element
+    # sp_int *= 2.0 * np.pi * ks  # 2D 2pi k element
+    sp_int *= ks ** (5.0 / 3.0)  # compensate for 5/3 slope
 
     # final proper value inside circle
     max_ks = int(nx // 2)

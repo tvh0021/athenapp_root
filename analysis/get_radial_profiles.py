@@ -746,7 +746,12 @@ def main():
         distances = sorted_dict[list(sorted_dict.keys())[0]][0, :]
         print("Getting mass flow rates")
         m_dot_data = get_multiple_mdots(
-            path, base_ext, start_nfile, stop_nfile, distances, nproc,
+            path,
+            base_ext,
+            start_nfile,
+            stop_nfile,
+            distances,
+            nproc,
         )
         sorted_m_dot = dict(sorted(m_dot_data.items()))
         sorted_m_dot["fields"] = [
