@@ -612,7 +612,7 @@ def make_plots(
                                 ("gas", plot_type),
                                 width=zoom,
                                 buff_size=(1500, 1500),
-                                weight_field=("gas", "cooling_rate"),
+                                weight_field=("gas", "density"),
                             )
                         else:
                             p = yt.ProjectionPlot(
@@ -621,7 +621,7 @@ def make_plots(
                                 ("gas", plot_type),
                                 width=zoom,
                                 buff_size=(1500, 1500),
-                                weight_field=("gas", "cooling_rate"),
+                                weight_field=("gas", "density"),
                             )
                         p.set_unit(("gas", plot_type), ap.lookup_units[plot_type])
                         p.set_zlim(
