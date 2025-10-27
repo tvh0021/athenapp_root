@@ -388,3 +388,19 @@ def _bondi_ratio(field, data):
     return (
         data["gas", "gravitational_potential"] / data["gas", "specific_thermal_energy"]
     )
+
+
+@derived_field(
+    name="H_nuclei_density", sampling_type="cell", units="cm**-3", force_override=True
+)
+def _H_nuclei_density(field, data):
+    X_H = 0.7  # Hydrogen mass fraction
+    m_H = 1.6726e-24 * u.g  # g
+    return data["gas", "density"].to("g/cm**3") * X_H / m_H
+
+
+@derived_field(
+    name="El_number_density", sampling_type="cell", units="cm**-3", force_override=True
+)
+def _El_number_density(field, data):
+    return data["gas", "H_nuclei_density"] * 1.2
