@@ -1896,9 +1896,9 @@ void enforceFloors(MeshBlock *pmb, AthenaArray<Real> &cons, const AthenaArray<Re
     // Added 12/12/2025: subtract magnetic field energy density from thermal energy density if magnetic fields are enabled
     if (MAGNETIC_FIELDS_ENABLED)
     {
-        const Real &bcc1 = pmb->bcc(IB1, k, j, i);
-        const Real &bcc2 = pmb->bcc(IB2, k, j, i);
-        const Real &bcc3 = pmb->bcc(IB3, k, j, i);
+        const Real &bcc1 = bcc(IB1, k, j, i);
+        const Real &bcc2 = bcc(IB2, k, j, i);
+        const Real &bcc3 = bcc(IB3, k, j, i);
         const Real magneticEnergyDensityCode = 0.5 * (SQR(bcc1) + SQR(bcc2) + SQR(bcc3));
 
         const Real temperatureCode = gammaMinus1 * (cons(IEN, k, j, i) - kineticEnergyDensityCode - magneticEnergyDensityCode) / (numberDensityCode * codeBoltzmannConst);
