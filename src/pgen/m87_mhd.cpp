@@ -1395,7 +1395,7 @@ void allSourceFunctions(MeshBlock *pmb, const Real time, const Real dt,
                     // COOLING
                     if (time > coolingStartTime / codeTime) // apply cooling
                     {
-                        coolingSourceFunction(dt, prim, cons, k, j, i);
+                        coolingSourceFunction(dt, prim, cons, bcc, k, j, i);
                     }
                     // END COOLING
 
@@ -1580,7 +1580,7 @@ void coolingSourceFunction(const Real dt, const AthenaArray<Real> &prim,
     const Real conservedDensityCode = fmax(cons(IDN, k, j, i), densityFloorAstronomical / codeDensity); // take the bigger between cell density and floor density
     const Real conservedNumberDensityCode = conservedDensityCode / conversionNtoRhoCode;
     const Real kineticEnergyDensityCode = 0.5 * (SQR(cons(IM1, k, j, i)) + SQR(cons(IM2, k, j, i)) + SQR(cons(IM3, k, j, i))) / conservedDensityCode; // unit: mass / length / time^2 (checked)
-    const Real thermalEnergyDensityCode = cons(IEN, k, j, i) - kineticEnergyDensityCode;
+    Real thermalEnergyDensityCode = cons(IEN, k, j, i) - kineticEnergyDensityCode;
 
     // Added 12/11/2025: subtract magnetic field energy from thermal energy density
     if (MAGNETIC_FIELDS_ENABLED)
