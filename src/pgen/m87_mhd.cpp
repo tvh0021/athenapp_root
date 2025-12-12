@@ -660,6 +660,7 @@ void Mesh::InitUserMeshData(ParameterInput *pin)
         if (MAGNETIC_FIELDS_ENABLED)
         {
             std::cout << "Plasma beta = " << beta << "\n";
+            std::cout << "\n";
         }
 
         if (numberOfRefinementLevels <= maxRefinementLevelForJet)
@@ -881,16 +882,30 @@ void MeshBlock::ProblemGenerator(ParameterInput *pin)
                 }
             }
         }
+    }
 
-        // Initialize conserved values
-        peos->PrimitiveToConserved(phydro->w, pfield->bcc, phydro->u, pcoord, il, iu, jl, ju, kl, ku);
+    // Calculate cell-centered magnetic field
+    AthenaArray<Real> bb;
+    if (MAGNETIC_FIELDS_ENABLED)
+    {
+        pfield->CalculateCellCenteredField(pfield->b, pfield->bcc, pcoord, il, iu, jl, ju, kl, ku);
     }
     else
     {
-        // Initialize conserved values
-        AthenaArray<Real> b;
-        peos->PrimitiveToConserved(phydro->w, b, phydro->u, pcoord, il, iu, jl, ju, kl, ku);
+        bb.NewAthenaArray(3, ku + 1, ju + 1, iu + 1);
     }
+
+    // // Initialize conserved values
+    // if (MAGNETIC_FIELDS_ENABLED)
+    // {
+    //     peos->PrimitiveToConserved(phydro->w, pfield->bcc, phydro->u, pcoord, il, iu, jl, ju, kl, ku);
+    // }
+    // else
+    // {
+    //     peos->PrimitiveToConserved(phydro->w, bb, phydro->u, pcoord, il, iu, jl, ju, kl, ku);
+    //     bb.DeleteAthenaArray();
+    // }
+
     return;
 }
 
