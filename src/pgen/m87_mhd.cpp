@@ -1714,6 +1714,9 @@ void jetFeedbackSourceFunction(MeshBlock *pmb, AthenaArray<Real> &cons, const At
 
         if (MAGNETIC_FIELDS_ENABLED)
         {
+            const Real &bcc1 = bcc(IB1, k, j, i);
+            const Real &bcc2 = bcc(IB2, k, j, i);
+            const Real &bcc3 = bcc(IB3, k, j, i);
             cons(IEN, k, j, i) += 0.5 * (SQR(bcc1) + SQR(bcc2) + SQR(bcc3)); // add back magnetic field energy density
         }
     }
@@ -1763,6 +1766,9 @@ void jetFeedbackSourceFunction(MeshBlock *pmb, AthenaArray<Real> &cons, const At
 
         if (MAGNETIC_FIELDS_ENABLED)
         {
+            const Real &bcc1 = bcc(IB1, k, j, i);
+            const Real &bcc2 = bcc(IB2, k, j, i);
+            const Real &bcc3 = bcc(IB3, k, j, i);
             cons(IEN, k, j, i) += 0.5 * (SQR(bcc1) + SQR(bcc2) + SQR(bcc3)); // add back magnetic field energy density
         }
     }
