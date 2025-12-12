@@ -84,8 +84,8 @@ void outerRadialBoundary(MeshBlock *pmb, const AthenaArray<Real> &prim,
                          AthenaArray<Real> &cons, int k, int j, int i,
                          Real z, Real y, Real x);
 void innerRadialBoundary(MeshBlock *pmb, const AthenaArray<Real> &prim,
-                         AthenaArray<Real> &cons, int k, int j, int i,
-                         Real z, Real y, Real x);
+                         AthenaArray<Real> &cons, AthenaArray<Real> &bcc,
+                         int k, int j, int i, Real z, Real y, Real x);
 
 int RefinementCondition(MeshBlock *pmb);
 
@@ -110,7 +110,7 @@ static void tabulatedNumberDensitiesAndPressures();
 static void crossProduct(std::vector<Real> r, std::vector<Real> p, Real *x, Real *y, Real *z);
 static Real interpolate1D(const Real inputX, const std::vector<Real> &tabulatedX, const std::vector<Real> &tabulatedY);
 static Real simpleInterpolate(Real inputX, std::vector<Real> tabulatedX, std::vector<Real> tabulatedY);
-void enforceFloors(MeshBlock *pmb, AthenaArray<Real> &cons, int k, int j, int i);
+void enforceFloors(MeshBlock *pmb, AthenaArray<Real> &cons, AthenaArray<Real> &bcc, int k, int j, int i);
 static Real coolingTime(AthenaArray<Real> &w, int k, int j, int i);
 static Real soundCrossingTime(AthenaArray<Real> &w, int k, int j, int i, Real cellWidth);
 static Real computeKineticEnergyDensityCode(AthenaArray<Real> &cons, int k, int j, int i);
@@ -1064,7 +1064,8 @@ void Mesh::UserWorkInLoop()
     }
     else
     {
-        accretionPerTimeStepCode = fmax(updatedInnerColdMassCode - innerMassCode, 0.); // in the case where no cold gas is accreted, the actual updated cold mass might be less than the expected cold mass, so set it to zero to prevent negative jet power
+        accretionPerTimeStepCode = fmax(updatedInnerColdMassCode + updatedInnerHotMassCode - innerMassCode, 0.); // in the case where no cold gas is accreted, the actual updated cold mass might be less than the expected cold mass, so set it to zero to prevent negative jet power
+        // Added 12/12/2025: add both cold and hot accretion to the jet power calculation
 
         ruser_mesh_data[2](0) += accretionPerTimeStepCode; // tally up accretion until next accretion update
         ruser_mesh_data[3](0) += accretionPerTimeStepCode; // tally up accretion for the entire simulation
@@ -1328,12 +1329,13 @@ void outerX3Boundary(MeshBlock *pmb, Coordinates *pco,
 }
 
 void innerRadialBoundary(MeshBlock *pmb, const AthenaArray<Real> &prim,
-                         AthenaArray<Real> &cons, int k, int j, int i,
+                         AthenaArray<Real> &cons, AthenaArray<Real> &bcc, int k, int j, int i,
                          Real z, Real y, Real x)
 {
     Real primDensity = prim(IDN, k, j, i);
     // Real valueW = pmb->phydro->w(IDN, k, j, i);
     Real valueW1 = pmb->phydro->w1(IDN, k, j, i);
+    Real magneticEnergyDensityCode = 0.; // if no B-field, nothing changes, otherwise magnetic energy density will be modified below
 
     // track inflow mass
     if (valueW1 == primDensity) // check to see if the integrator has moved to the second sub-step of the rk2. Only record accretion here to avoid data being counted twice
@@ -1342,7 +1344,18 @@ void innerRadialBoundary(MeshBlock *pmb, const AthenaArray<Real> &prim,
         // Added 06/23/2023: calculate current temperature of cell to determine if accretion is hot or cold
         const Real conservedNumberDensityCode = cons(IDN, k, j, i) / conversionNtoRhoCode;
         const Real kineticEnergyDensityCode = computeKineticEnergyDensityCode(cons, k, j, i); // unit: mass / length / time^2 (checked)
-        const Real thermalEnergyDensityCode = cons(IEN, k, j, i) - kineticEnergyDensityCode;
+        Real thermalEnergyDensityCode = cons(IEN, k, j, i) - kineticEnergyDensityCode;
+
+        // Added 12/12/2025: subtract magnetic energy density from thermal energy density
+        if (MAGNETIC_FIELDS_ENABLED)
+        {
+            const Real &bcc1 = bcc(IB1, k, j, i);
+            const Real &bcc2 = bcc(IB2, k, j, i);
+            const Real &bcc3 = bcc(IB3, k, j, i);
+            magneticEnergyDensityCode = 0.5 * (SQR(bcc1) + SQR(bcc2) + SQR(bcc3));
+            thermalEnergyDensityCode -= magneticEnergyDensityCode;
+        }
+
         const Real conservedTemperatureCode = gammaMinus1 * thermalEnergyDensityCode / (conservedNumberDensityCode * codeBoltzmannConst);
 
         const Real cellVolumeCode = pmb->pcoord->GetCellVolume(k, j, i);
@@ -1362,9 +1375,9 @@ void innerRadialBoundary(MeshBlock *pmb, const AthenaArray<Real> &prim,
         }
     }
 
-    cons(IDN, k, j, i) = densityVacuumSinkAstronomical / codeDensity;                 // force sink density
-    cons(IEN, k, j, i) = pressureVacuumSinkAstronomical / codePressure / gammaMinus1; // force floor pressure based on floor temperature
-    cons(IM1, k, j, i) = 0.;                                                          // force zero velocity
+    cons(IDN, k, j, i) = densityVacuumSinkAstronomical / codeDensity;                                             // force sink density
+    cons(IEN, k, j, i) = pressureVacuumSinkAstronomical / codePressure / gammaMinus1 + magneticEnergyDensityCode; // force floor pressure by setting internal energy which includes thermal and magnetic
+    cons(IM1, k, j, i) = 0.;                                                                                      // force zero velocity
     cons(IM2, k, j, i) = 0.;
     cons(IM3, k, j, i) = 0.;
 }
@@ -1415,7 +1428,7 @@ void allSourceFunctions(MeshBlock *pmb, const Real time, const Real dt,
                     // END COOLING
 
                     // ENFORCE TEMPERATURE AND DENSITY FLOOR // STILL NEED THIS EVEN WITH THE BUILT-IN FLOORS; TEMPERATURE SILENT CRASH OCCURS OTHERWISE
-                    enforceFloors(pmb, cons, k, j, i); // 06/17/2023: moving this up here, since only cooling would result in a temperature crash
+                    enforceFloors(pmb, cons, bcc, k, j, i); // 06/17/2023: moving this up here, since only cooling would result in a temperature crash
                     // END ENFORCE TEMPERATURE AND DENSITY FLOOR
 
                     // JET FEEDBACK
@@ -1435,7 +1448,7 @@ void allSourceFunctions(MeshBlock *pmb, const Real time, const Real dt,
                 // INNER RADIAL BOUNDARY
                 if (r < currentInnerRadius / codeLength)
                 {
-                    innerRadialBoundary(pmb, prim, cons, k, j, i, z, y, x);
+                    innerRadialBoundary(pmb, prim, cons, bcc, k, j, i, z, y, x);
                 }
                 // END INNER RADIAL BOUNDARY
             }
@@ -1860,7 +1873,7 @@ static Real simpleInterpolate(Real inputX, std::vector<Real> tabulatedX, std::ve
 Enforce a temperature and density floor if a cell has lower temperature/density than floor temperature/density
 */
 
-void enforceFloors(MeshBlock *pmb, AthenaArray<Real> &cons, int k, int j, int i)
+void enforceFloors(MeshBlock *pmb, AthenaArray<Real> &cons, AthenaArray<Real> &bcc, int k, int j, int i)
 {
     // Added 11/23/2023: enforce density floor correctly by fixing velocity and temperature
     Real numberDensityCode = cons(IDN, k, j, i) / conversionNtoRhoCode;
@@ -1879,12 +1892,31 @@ void enforceFloors(MeshBlock *pmb, AthenaArray<Real> &cons, int k, int j, int i)
     // Added 11/23/2023: enforce temperature floor correctly by fixing velocity and density
 
     const Real kineticEnergyDensityCode = computeKineticEnergyDensityCode(cons, k, j, i);
-    const Real temperatureCode = gammaMinus1 * (cons(IEN, k, j, i) - kineticEnergyDensityCode) / (numberDensityCode * codeBoltzmannConst);
 
-    if (temperatureCode < temperatureFloor / codeTemperature)
+    // Added 12/12/2025: subtract magnetic field energy density from thermal energy density if magnetic fields are enabled
+    if (MAGNETIC_FIELDS_ENABLED)
     {
-        const Real fractionTemperatureChange = temperatureFloor / codeTemperature / temperatureCode;
-        cons(IEN, k, j, i) = fractionTemperatureChange * (cons(IEN, k, j, i) - kineticEnergyDensityCode) + kineticEnergyDensityCode; // the new internal energy, assuming velocity and density are constant
+        const Real &bcc1 = pmb->bcc(IB1, k, j, i);
+        const Real &bcc2 = pmb->bcc(IB2, k, j, i);
+        const Real &bcc3 = pmb->bcc(IB3, k, j, i);
+        const Real magneticEnergyDensityCode = 0.5 * (SQR(bcc1) + SQR(bcc2) + SQR(bcc3));
+
+        const Real temperatureCode = gammaMinus1 * (cons(IEN, k, j, i) - kineticEnergyDensityCode - magneticEnergyDensityCode) / (numberDensityCode * codeBoltzmannConst);
+        if (temperatureCode < temperatureFloor / codeTemperature)
+        {
+            const Real fractionTemperatureChange = temperatureFloor / codeTemperature / temperatureCode;
+            cons(IEN, k, j, i) = fractionTemperatureChange * (cons(IEN, k, j, i) - kineticEnergyDensityCode - magneticEnergyDensityCode) + kineticEnergyDensityCode + magneticEnergyDensityCode; // the new internal energy, assuming velocity and density are constant
+        }
+    }
+    else
+    {
+        const Real temperatureCode = gammaMinus1 * (cons(IEN, k, j, i) - kineticEnergyDensityCode) / (numberDensityCode * codeBoltzmannConst);
+
+        if (temperatureCode < temperatureFloor / codeTemperature)
+        {
+            const Real fractionTemperatureChange = temperatureFloor / codeTemperature / temperatureCode;
+            cons(IEN, k, j, i) = fractionTemperatureChange * (cons(IEN, k, j, i) - kineticEnergyDensityCode) + kineticEnergyDensityCode; // the new internal energy, assuming velocity and density are constant
+        }
     }
 }
 
