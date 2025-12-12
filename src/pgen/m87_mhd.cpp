@@ -84,7 +84,7 @@ void outerRadialBoundary(MeshBlock *pmb, const AthenaArray<Real> &prim,
                          AthenaArray<Real> &cons, int k, int j, int i,
                          Real z, Real y, Real x);
 void innerRadialBoundary(MeshBlock *pmb, const AthenaArray<Real> &prim,
-                         AthenaArray<Real> &cons, AthenaArray<Real> &bcc,
+                         AthenaArray<Real> &cons, const AthenaArray<Real> &bcc,
                          int k, int j, int i, Real z, Real y, Real x);
 
 int RefinementCondition(MeshBlock *pmb);
@@ -110,7 +110,7 @@ static void tabulatedNumberDensitiesAndPressures();
 static void crossProduct(std::vector<Real> r, std::vector<Real> p, Real *x, Real *y, Real *z);
 static Real interpolate1D(const Real inputX, const std::vector<Real> &tabulatedX, const std::vector<Real> &tabulatedY);
 static Real simpleInterpolate(Real inputX, std::vector<Real> tabulatedX, std::vector<Real> tabulatedY);
-void enforceFloors(MeshBlock *pmb, AthenaArray<Real> &cons, AthenaArray<Real> &bcc, int k, int j, int i);
+void enforceFloors(MeshBlock *pmb, AthenaArray<Real> &cons, const AthenaArray<Real> &bcc, int k, int j, int i);
 static Real coolingTime(AthenaArray<Real> &w, int k, int j, int i);
 static Real soundCrossingTime(AthenaArray<Real> &w, int k, int j, int i, Real cellWidth);
 static Real computeKineticEnergyDensityCode(AthenaArray<Real> &cons, int k, int j, int i);
@@ -1329,7 +1329,7 @@ void outerX3Boundary(MeshBlock *pmb, Coordinates *pco,
 }
 
 void innerRadialBoundary(MeshBlock *pmb, const AthenaArray<Real> &prim,
-                         AthenaArray<Real> &cons, AthenaArray<Real> &bcc, int k, int j, int i,
+                         AthenaArray<Real> &cons, const AthenaArray<Real> &bcc, int k, int j, int i,
                          Real z, Real y, Real x)
 {
     Real primDensity = prim(IDN, k, j, i);
@@ -1873,7 +1873,7 @@ static Real simpleInterpolate(Real inputX, std::vector<Real> tabulatedX, std::ve
 Enforce a temperature and density floor if a cell has lower temperature/density than floor temperature/density
 */
 
-void enforceFloors(MeshBlock *pmb, AthenaArray<Real> &cons, AthenaArray<Real> &bcc, int k, int j, int i)
+void enforceFloors(MeshBlock *pmb, AthenaArray<Real> &cons, const AthenaArray<Real> &bcc, int k, int j, int i)
 {
     // Added 11/23/2023: enforce density floor correctly by fixing velocity and temperature
     Real numberDensityCode = cons(IDN, k, j, i) / conversionNtoRhoCode;
