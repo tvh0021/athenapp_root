@@ -121,7 +121,7 @@ static Real emissivityFromTemperature(const Real temperature);
 static Real coolingFunction(const Real numberDensity, const Real emissivity);
 
 void jetFeedbackSourceFunction(MeshBlock *pmb, AthenaArray<Real> &cons, const AthenaArray<Real> &prim,
-                               int k, int j, int i, const Real dt,
+                               const AthenaArray<Real> &bcc, int k, int j, int i, const Real dt,
                                Real z, Real y, Real x, Real polarDistance);
 
 Real coldAccretionRate(MeshBlock *pmb, int iout);
@@ -1421,7 +1421,7 @@ void allSourceFunctions(MeshBlock *pmb, const Real time, const Real dt,
                     // JET FEEDBACK
                     if (time > jetStartTime / codeTime && polarDistance <= jetLaunchingWidth / codeLength && r < 2 * jetLaunchingHeight / codeLength && numberOfRefinementLevels <= maxRefinementLevelForJet) // apply jet feedback only to the regions close to the jet platform
                     {
-                        jetFeedbackSourceFunction(pmb, cons, prim, k, j, i, dt, z, y, x, polarDistance);
+                        jetFeedbackSourceFunction(pmb, cons, prim, bcc, k, j, i, dt, z, y, x, polarDistance);
                     }
                     // END JET FEEDBACK
                 }
@@ -1660,7 +1660,7 @@ Rewrite jet feedback source function, 04/19/2023
 */
 
 void jetFeedbackSourceFunction(MeshBlock *pmb, AthenaArray<Real> &cons, const AthenaArray<Real> &prim,
-                               int k, int j, int i, const Real dt,
+                               const AthenaArray<Real> &bcc, int k, int j, int i, const Real dt,
                                Real z, Real y, Real x, Real polarDistance)
 {
     const Real cellHeightCode = pmb->pcoord->GetEdge3Length(k, j, i);
@@ -1679,7 +1679,20 @@ void jetFeedbackSourceFunction(MeshBlock *pmb, AthenaArray<Real> &cons, const At
 
         // Added 06/17/2023: rewrote again to be consistent with Li & Bryan (2014)
         const Real cellKineticEnergyDensityCode = computeKineticEnergyDensityCode(cons, k, j, i); // KE = p^2 / 2 rho
-        const Real cellThermalEnergyDensityCode = cons(IEN, k, j, i) - cellKineticEnergyDensityCode;
+
+        // Added 12/12/2025: subtract magnetic field energy density from thermal energy density if magnetic fields are enabled
+        if (MAGNETIC_FIELDS_ENABLED)
+        {
+            const Real &bcc1 = bcc(IB1, k, j, i);
+            const Real &bcc2 = bcc(IB2, k, j, i);
+            const Real &bcc3 = bcc(IB3, k, j, i);
+            Real cellMagneticEnergyDensityCode = 0.5 * (SQR(bcc1) + SQR(bcc2) + SQR(bcc3));
+            const Real cellThermalEnergyDensityCode = cons(IEN, k, j, i) - cellKineticEnergyDensityCode - cellMagneticEnergyDensityCode;
+        }
+        else
+        {
+            const Real cellThermalEnergyDensityCode = cons(IEN, k, j, i) - cellKineticEnergyDensityCode;
+        }
 
         // Added 07/04/2023: jet precession
         Real jetVelocityXAstronomical, jetVelocityYAstronomical, jetVelocityZAstronomical;
