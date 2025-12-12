@@ -116,7 +116,7 @@ static Real soundCrossingTime(AthenaArray<Real> &w, int k, int j, int i, Real ce
 static Real computeKineticEnergyDensityCode(AthenaArray<Real> &cons, int k, int j, int i);
 
 void coolingSourceFunction(const Real dt, const AthenaArray<Real> &prim,
-                           AthenaArray<Real> &cons, int k, int j, int i);
+                           AthenaArray<Real> &cons, const AthenaArray<Real> &bcc, int k, int j, int i);
 static Real emissivityFromTemperature(const Real temperature);
 static Real coolingFunction(const Real numberDensity, const Real emissivity);
 
@@ -1569,7 +1569,7 @@ Cooling function, part of the source function
 
 // Source function copied from Guo+23, added 03/06
 void coolingSourceFunction(const Real dt, const AthenaArray<Real> &prim,
-                           AthenaArray<Real> &cons, int k, int j, int i)
+                           AthenaArray<Real> &cons, const AthenaArray<Real> &bcc, int k, int j, int i)
 {
     // Added 07/09/2024: some minor optimizations
 
