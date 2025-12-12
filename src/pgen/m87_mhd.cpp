@@ -1679,6 +1679,7 @@ void jetFeedbackSourceFunction(MeshBlock *pmb, AthenaArray<Real> &cons, const At
 
         // Added 06/17/2023: rewrote again to be consistent with Li & Bryan (2014)
         const Real cellKineticEnergyDensityCode = computeKineticEnergyDensityCode(cons, k, j, i); // KE = p^2 / 2 rho
+        Real cellThermalEnergyDensityCode = cons(IEN, k, j, i) - cellKineticEnergyDensityCode;
 
         // Added 12/12/2025: subtract magnetic field energy density from thermal energy density if magnetic fields are enabled
         if (MAGNETIC_FIELDS_ENABLED)
@@ -1687,11 +1688,7 @@ void jetFeedbackSourceFunction(MeshBlock *pmb, AthenaArray<Real> &cons, const At
             const Real &bcc2 = bcc(IB2, k, j, i);
             const Real &bcc3 = bcc(IB3, k, j, i);
             Real cellMagneticEnergyDensityCode = 0.5 * (SQR(bcc1) + SQR(bcc2) + SQR(bcc3));
-            const Real cellThermalEnergyDensityCode = cons(IEN, k, j, i) - cellKineticEnergyDensityCode - cellMagneticEnergyDensityCode;
-        }
-        else
-        {
-            const Real cellThermalEnergyDensityCode = cons(IEN, k, j, i) - cellKineticEnergyDensityCode;
+            cellThermalEnergyDensityCode -= cellMagneticEnergyDensityCode;
         }
 
         // Added 07/04/2023: jet precession
@@ -1714,6 +1711,11 @@ void jetFeedbackSourceFunction(MeshBlock *pmb, AthenaArray<Real> &cons, const At
         const Real updatedThermalEnergyDensityCode = cellThermalEnergyDensityCode + jetThermalEnergyDensityCode;
 
         cons(IEN, k, j, i) = updatedKineticEnergyDensityCode + updatedThermalEnergyDensityCode; // update energy
+
+        if (MAGNETIC_FIELDS_ENABLED)
+        {
+            cons(IEN, k, j, i) += 0.5 * (SQR(bcc1) + SQR(bcc2) + SQR(bcc3)); // add back magnetic field energy density
+        }
     }
     else if ((z > -1. * jetLaunchingHeight / codeLength - 0.5 * cellHeightCode) && (z < -1. * jetLaunchingHeight / codeLength + 0.5 * cellHeightCode))
     {                                                                                                 // bottom jet
@@ -1726,7 +1728,17 @@ void jetFeedbackSourceFunction(MeshBlock *pmb, AthenaArray<Real> &cons, const At
 
         // Added 06/17/2023: rewrote again to be consistent with Li & Bryan (2014)
         const Real cellKineticEnergyDensityCode = computeKineticEnergyDensityCode(cons, k, j, i); // KE = p^2 / 2 rho
-        const Real cellThermalEnergyDensityCode = cons(IEN, k, j, i) - cellKineticEnergyDensityCode;
+        Real cellThermalEnergyDensityCode = cons(IEN, k, j, i) - cellKineticEnergyDensityCode;
+
+        // Added 12/12/2025: subtract magnetic field energy density from thermal energy density if magnetic fields are enabled
+        if (MAGNETIC_FIELDS_ENABLED)
+        {
+            const Real &bcc1 = bcc(IB1, k, j, i);
+            const Real &bcc2 = bcc(IB2, k, j, i);
+            const Real &bcc3 = bcc(IB3, k, j, i);
+            Real cellMagneticEnergyDensityCode = 0.5 * (SQR(bcc1) + SQR(bcc2) + SQR(bcc3));
+            cellThermalEnergyDensityCode -= cellMagneticEnergyDensityCode;
+        }
 
         // Added 07/04/2023: jet precession
         Real jetVelocityXAstronomical, jetVelocityYAstronomical, jetVelocityZAstronomical;
@@ -1748,6 +1760,11 @@ void jetFeedbackSourceFunction(MeshBlock *pmb, AthenaArray<Real> &cons, const At
         const Real updatedThermalEnergyDensityCode = cellThermalEnergyDensityCode + jetThermalEnergyDensityCode;
 
         cons(IEN, k, j, i) = updatedKineticEnergyDensityCode + updatedThermalEnergyDensityCode; // update energy
+
+        if (MAGNETIC_FIELDS_ENABLED)
+        {
+            cons(IEN, k, j, i) += 0.5 * (SQR(bcc1) + SQR(bcc2) + SQR(bcc3)); // add back magnetic field energy density
+        }
     }
 }
 
