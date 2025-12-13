@@ -1064,7 +1064,7 @@ void Mesh::UserWorkInLoop()
     }
     else
     {
-        accretionPerTimeStepCode = fmax(updatedInnerColdMassCode + updatedInnerHotMassCode - innerMassCode, 0.); // in the case where no cold gas is accreted, the actual updated cold mass might be less than the expected cold mass, so set it to zero to prevent negative jet power
+        accretionPerTimeStepCode = fmax(updatedInnerColdMassCode - innerMassCode, 0.); // in the case where no cold gas is accreted, the actual updated cold mass might be less than the expected cold mass, so set it to zero to prevent negative jet power
         // Added 12/12/2025: add both cold and hot accretion to the jet power calculation
 
         ruser_mesh_data[2](0) += accretionPerTimeStepCode; // tally up accretion until next accretion update
