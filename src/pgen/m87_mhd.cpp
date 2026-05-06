@@ -877,7 +877,7 @@ void MeshBlock::ProblemGenerator(ParameterInput *pin)
 
                     pfield->b.x1f(k, j, i) = 0.0;
                     pfield->b.x2f(k, j, i) = 0.0;
-                    pfield->b.x3f(k, j, i) = sqrt(8 * PI * pressure / beta);
+                    pfield->b.x3f(k, j, i) = sqrt(8 * PI * pressure / beta); // set Bz based on plasma beta, based on pgen by Drummond Fielding
                     phydro->u(IEN, k, j, i) += pressure / beta;
                 }
             }

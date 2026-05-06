@@ -2,6 +2,7 @@
 
 import numpy as np
 import pandas as pd
+from scipy.interpolate import interp1d
 import yt
 import yt.units as u
 from yt import derived_field
@@ -175,6 +176,281 @@ radiusList = enclosed_mass["R (pc)"].values
 massList = enclosed_mass["Total_mass (Msun)"].values
 
 
+def K_to_keV(temperature):
+    return temperature * boltzmannConstCGS / 1.60218e-9
+
+
+def keV_to_K(temperature_keV):
+    return temperature_keV * 1.60218e-9 / boltzmannConstCGS
+
+
+def closest_value(array, value):
+    array = np.asarray(array)
+    idx = (np.abs(array - value)).argmin()
+    return array[idx], idx
+
+
+logTemperatureArray = np.array(
+    [
+        3.8,
+        3.84,
+        3.88,
+        3.92,
+        3.96,
+        4.0,
+        4.04,
+        4.08,
+        4.12,
+        4.16,
+        4.2,
+        4.24,
+        4.28,
+        4.32,
+        4.36,
+        4.4,
+        4.44,
+        4.48,
+        4.52,
+        4.56,
+        4.6,
+        4.64,
+        4.68,
+        4.72,
+        4.76,
+        4.8,
+        4.84,
+        4.88,
+        4.92,
+        4.96,
+        5.0,
+        5.04,
+        5.08,
+        5.12,
+        5.16,
+        5.2,
+        5.24,
+        5.28,
+        5.32,
+        5.36,
+        5.4,
+        5.44,
+        5.48,
+        5.52,
+        5.56,
+        5.6,
+        5.64,
+        5.68,
+        5.72,
+        5.76,
+        5.8,
+        5.84,
+        5.88,
+        5.92,
+        5.96,
+        6.0,
+        6.04,
+        6.08,
+        6.12,
+        6.16,
+        6.2,
+        6.24,
+        6.28,
+        6.32,
+        6.36,
+        6.4,
+        6.44,
+        6.48,
+        6.52,
+        6.56,
+        6.6,
+        6.64,
+        6.68,
+        6.72,
+        6.76,
+        6.8,
+        6.84,
+        6.88,
+        6.92,
+        6.96,
+        7.0,
+        7.04,
+        7.08,
+        7.12,
+        7.16,
+        7.2,
+        7.24,
+        7.28,
+        7.32,
+        7.36,
+        7.4,
+        7.44,
+        7.48,
+        7.52,
+        7.56,
+        7.6,
+        7.64,
+        7.68,
+        7.72,
+        7.76,
+        7.8,
+        7.84,
+        7.88,
+        7.92,
+        7.96,
+        8.0,
+        8.04,
+        8.08,
+        8.12,
+        8.16,
+    ]
+)
+logEmissivityHydroArray = np.array(
+    [
+        -30.6104,
+        -29.4107,
+        -28.4601,
+        -27.5743,
+        -26.3766,
+        -25.289,
+        -24.2684,
+        -23.3834,
+        -22.5977,
+        -21.9689,
+        -21.5972,
+        -21.4615,
+        -21.4789,
+        -21.5497,
+        -21.6211,
+        -21.6595,
+        -21.6426,
+        -21.5688,
+        -21.4771,
+        -21.3755,
+        -21.2693,
+        -21.1644,
+        -21.0658,
+        -20.9778,
+        -20.8986,
+        -20.8281,
+        -20.77,
+        -20.7223,
+        -20.6888,
+        -20.6739,
+        -20.6815,
+        -20.7051,
+        -20.7229,
+        -20.7208,
+        -20.7058,
+        -20.6896,
+        -20.6797,
+        -20.6749,
+        -20.6709,
+        -20.6748,
+        -20.7089,
+        -20.8031,
+        -20.9647,
+        -21.1482,
+        -21.2932,
+        -21.3767,
+        -21.4129,
+        -21.4291,
+        -21.4538,
+        -21.5055,
+        -21.574,
+        -21.63,
+        -21.6615,
+        -21.6766,
+        -21.6886,
+        -21.7073,
+        -21.7304,
+        -21.7491,
+        -21.7607,
+        -21.7701,
+        -21.7877,
+        -21.8243,
+        -21.8875,
+        -21.9738,
+        -22.0671,
+        -22.1537,
+        -22.2265,
+        -22.2821,
+        -22.3213,
+        -22.3462,
+        -22.3587,
+        -22.3622,
+        -22.359,
+        -22.3512,
+        -22.342,
+        -22.3342,
+        -22.3312,
+        -22.3346,
+        -22.3445,
+        -22.3595,
+        -22.378,
+        -22.4007,
+        -22.4289,
+        -22.4625,
+        -22.4995,
+        -22.5353,
+        -22.5659,
+        -22.5895,
+        -22.6059,
+        -22.6161,
+        -22.6208,
+        -22.6213,
+        -22.6184,
+        -22.6126,
+        -22.6045,
+        -22.5945,
+        -22.5831,
+        -22.5707,
+        -22.5573,
+        -22.5434,
+        -22.5287,
+        -22.514,
+        -22.4992,
+        -22.4844,
+        -22.4695,
+        -22.4543,
+        -22.4392,
+        -22.4237,
+        -22.4087,
+        -22.3928,
+    ]
+)
+
+tempList = np.logspace(3.0, 12.0, 300)
+
+
+def emissivityFromTemperature(temperature):
+    # Real emissivityCGS, emissivityAstronomical;
+    logTemperature = np.log10(temperature)
+    if logTemperature <= 4.2:  # Koyama & Inutsuka (2002)
+        emissivityCGS = 2.0e-19 * np.exp(
+            -1.184e5 / (temperature + 1.0e3)
+        ) + 2.8e-28 * np.sqrt(temperature) * np.exp(-92.0 / temperature)
+    elif logTemperature > 8.15:  # Schneider & Robertson (2018)
+        emissivityCGS = 10.0 ** (0.45 * logTemperature - 26.065)
+    else:  # Schure+09
+        emissivityCGS = 10.0 ** (
+            np.interp(logTemperature, logTemperatureArray, logEmissivityHydroArray)
+        )
+
+    # emissivityAstronomical = emissivityCGS / (solarMassCGS * pow(MpcCGS, 5) * pow(MyrCGS, -3))
+
+    return emissivityCGS
+
+
+lambdaListCGS = np.zeros(300)
+for i, temp in enumerate(tempList):
+    lambdaListCGS[i] = emissivityFromTemperature(temp)
+
+interpLambdaFunction = interp1d(tempList, lambdaListCGS)
+
+SMBHMass = 6.5e9 * u.Msun
+r_g = phc.G * SMBHMass / phc.c**2
+
+
 # derived fields
 @derived_field(
     name="cooling_time", sampling_type="cell", units="Myr", force_override=True
@@ -201,6 +477,13 @@ def _sound_crossing_time(field, data):
     return data["gas", "dx"] / np.sqrt(
         data.ds.gamma * data["gas", "pressure"] / data["gas", "density"]
     )
+
+
+@derived_field(
+    name="PdV", sampling_type="cell", units="erg/s/cm**3", force_override=True
+)
+def _PdV(field, data):
+    return -1.0 * data["gas", "pressure"] * data["gas", "velocity_divergence"]
 
 
 @derived_field(
@@ -268,6 +551,22 @@ def _normalized_specific_angular_momentum_y(field, data):
 def _normalized_specific_angular_momentum_z(field, data):
     return (
         data["gas", "specific_angular_momentum_z"]
+        / data["gas", "keplerian_specific_angular_momentum"]
+    )
+
+
+@derived_field(
+    name="normalized_specific_angular_momentum_magnitude",
+    sampling_type="cell",
+    force_override=True,
+)
+def _normalized_specific_angular_momentum_magnitude(field, data):
+    return (
+        np.sqrt(
+            data["gas", "specific_angular_momentum_x"] ** 2
+            + data["gas", "specific_angular_momentum_y"] ** 2
+            + data["gas", "specific_angular_momentum_z"] ** 2
+        )
         / data["gas", "keplerian_specific_angular_momentum"]
     )
 
@@ -348,6 +647,7 @@ def _vr(field, data):
 
 @derived_field(name="vtheta", sampling_type="cell", units="km/s", force_override=True)
 def _vtheta(field, data):
+    # return (data["gas", "vr"] * data["gas", "angle_theta"] - data["gas", "velocity_z"]) / (data["index", "radius"] * np.sin(data["gas", "angle_theta"]))
     return (
         data["gas", "velocity_x"]
         * np.cos(data["gas", "angle_theta"])
@@ -369,6 +669,37 @@ def _vphi(field, data):
 @derived_field(name="vtangent", sampling_type="cell", units="km/s", force_override=True)
 def _vtangent(field, data):
     return np.sqrt(data["gas", "velocity_magnitude"] ** 2 - data["gas", "vr"] ** 2)
+
+
+@derived_field(
+    name="rotational_velocity", sampling_type="cell", units="km/s", force_override=True
+)
+def _rotational_velocity(field, data):
+    r_vec = np.array(
+        [
+            data["gas", "x"].to("Mpc"),
+            data["gas", "y"].to("Mpc"),
+            data["gas", "z"].to("Mpc"),
+        ]
+    ).T
+    L_hat = np.array(
+        [
+            data["gas", "normalized_specific_angular_momentum_x"],
+            data["gas", "normalized_specific_angular_momentum_y"],
+            data["gas", "normalized_specific_angular_momentum_z"],
+        ]
+    ).T
+
+    # compute r_cyl, which is the cylindrical radius in the plane perpendicular to L_hat
+    r_parallel = np.sum(r_vec * L_hat, axis=-1)
+    r_cyl = np.sqrt(np.sum(r_vec**2, axis=-1) - r_parallel**2)
+    r_cyl *= u.Mpc
+    return data["gas", "specific_angular_momentum_magnitude"] / r_cyl
+
+
+@derived_field(name="accretion_parameter", sampling_type="cell", force_override=True)
+def _accretion_parameter(field, data):
+    return data["gas", "vr"] / data["gas", "vtangent"]
 
 
 @derived_field(
@@ -404,3 +735,47 @@ def _H_nuclei_density(field, data):
 )
 def _El_number_density(field, data):
     return data["gas", "H_nuclei_density"] * 1.2
+
+
+@derived_field(
+    name="local_bondi_radius", sampling_type="cell", units="pc", force_override=True
+)
+def _local_bondi_radius(field, data):
+    return 2 * phc.G * SMBHMass / (data["sound_speed"] ** 2)
+
+
+@derived_field(
+    name="in_bondi_region", sampling_type="cell", units="", force_override=True
+)
+def _in_bondi_region(field, data):
+    return data["local_bondi_radius"] / data["radius"]
+
+
+@derived_field(
+    name="bondi_accretion_rate",
+    sampling_type="cell",
+    units="Msun/yr",
+    force_override=True,
+)
+def _bondi_accretion_rate(field, data):
+    rho = data["density"]
+    cs = data["sound_speed"]
+    bondi_rate = (4 * np.pi * phc.G**2 * SMBHMass**2 * rho) / (cs**3)
+    return bondi_rate.to("Msun/yr")
+
+
+@derived_field(
+    name="circularization_radius", sampling_type="cell", units="pc", force_override=True
+)
+def _circularization_radius(field, data):
+    return (data["radius"] * data["vtangent"]) ** 2 / (phc.G * SMBHMass)
+
+
+@derived_field(
+    name="in_circularization_region",
+    sampling_type="cell",
+    units="",
+    force_override=True,
+)
+def _in_circularization_region(field, data):
+    return data["circularization_radius"] / data["radius"]
