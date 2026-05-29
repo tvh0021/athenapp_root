@@ -779,3 +779,18 @@ def _circularization_radius(field, data):
 )
 def _in_circularization_region(field, data):
     return data["circularization_radius"] / data["radius"]
+
+
+@derived_field(name="r_z", sampling_type="cell", units="pc", force_override=True)
+def _r_z(field, data):
+    return np.sqrt(data["index", "x"] ** 2 + data["index", "y"] ** 2)
+
+
+@derived_field(name="r_x", sampling_type="cell", units="pc", force_override=True)
+def _r_x(field, data):
+    return np.sqrt(data["index", "y"] ** 2 + data["index", "z"] ** 2)
+
+
+@derived_field(name="r_y", sampling_type="cell", units="pc", force_override=True)
+def _r_y(field, data):
+    return np.sqrt(data["index", "z"] ** 2 + data["index", "x"] ** 2)
