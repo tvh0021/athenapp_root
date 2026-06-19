@@ -46,7 +46,6 @@ DEFAULT_FIELDS = [
     "pressure",
     "density",
     "temperature",
-    "vr",
     "radius",
 ]
 
@@ -335,6 +334,16 @@ def radial_velocity_gradient(velocity_quantity, grid_resolution, r_hat):
     return grad_v.in_units("1/s")
 
 
+def radial_velocity_component(datadict):
+    """Convert Cartesian velocities into the local spherical radial component."""
+
+    r_hat_x, r_hat_y, r_hat_z = radial_unit_vectors(datadict)
+    vx = datadict["velocity_x"].in_units("km/s")
+    vy = datadict["velocity_y"].in_units("km/s")
+    vz = datadict["velocity_z"].in_units("km/s")
+    return (vx * r_hat_x + vy * r_hat_y + vz * r_hat_z).in_units("km/s")
+
+
 def angular_velocity_components(datadict):
     """Convert Cartesian velocities into local spherical angular components."""
 
@@ -382,6 +391,26 @@ def angular_velocity_components(datadict):
     return vtheta.in_units("km/s"), vphi.in_units("km/s")
 
 
+def specific_angular_momentum_components(datadict):
+    """Compute Cartesian specific angular momentum components, r cross v."""
+
+    x = datadict["x"].in_units("cm")
+    y = datadict["y"].in_units("cm")
+    z = datadict["z"].in_units("cm")
+    vx = datadict["velocity_x"].in_units("cm/s")
+    vy = datadict["velocity_y"].in_units("cm/s")
+    vz = datadict["velocity_z"].in_units("cm/s")
+
+    jx = y * vz - z * vy
+    jy = z * vx - x * vz
+    jz = x * vy - y * vx
+    return (
+        finite_quantity(jx, "cm**2/s"),
+        finite_quantity(jy, "cm**2/s"),
+        finite_quantity(jz, "cm**2/s"),
+    )
+
+
 def enclosed_mass_total(radius):
     """Interpolate the total enclosed M87 mass at each radius."""
 
@@ -393,7 +422,7 @@ def enclosed_mass_total(radius):
 
 
 def compute_support_accelerations(datadict, grid_resolution, driving_scale):
-    """Compute local thermal, turbulent, ram, rotation, and gravity terms."""
+    """Compute local pressure, smoothed-rotation, and gravity terms."""
 
     sigma_cells = float(driving_scale / grid_resolution / 6.0)
     r_hat = radial_unit_vectors(datadict)
@@ -430,7 +459,8 @@ def compute_support_accelerations(datadict, grid_resolution, driving_scale):
     )
     turbulence = finite_quantity((-dPturb_dr / density), "cm/s**2")
 
-    vr_smooth = smooth_quantity(datadict["vr"], sigma_cells, "km/s")
+    vr = radial_velocity_component(datadict)
+    vr_smooth = smooth_quantity(vr, sigma_cells, "km/s")
     dvr_dr = radial_velocity_gradient(vr_smooth, grid_resolution, r_hat)
     ram_pressure = (
         density_smooth * (dvr_dr * grid_resolution.in_units("cm")) ** 2
@@ -451,7 +481,7 @@ def compute_support_accelerations(datadict, grid_resolution, driving_scale):
     vtheta, vphi = angular_velocity_components(datadict)
     vtheta_smooth = smooth_quantity(vtheta, sigma_cells, "km/s")
     vphi_smooth = smooth_quantity(vphi, sigma_cells, "km/s")
-    rotation = finite_quantity(
+    rotation_smoothed = finite_quantity(
         (
             (
                 vtheta_smooth.in_units("cm/s") ** 2
@@ -461,6 +491,7 @@ def compute_support_accelerations(datadict, grid_resolution, driving_scale):
         ),
         "cm/s**2",
     )
+    jx, jy, jz = specific_angular_momentum_components(datadict)
 
     enclosed_mass = enclosed_mass_total(datadict["radius"])
     gravity_magnitude = finite_quantity(
@@ -472,13 +503,16 @@ def compute_support_accelerations(datadict, grid_resolution, driving_scale):
         "thermal": thermal,
         "turbulence": turbulence,
         "ram_lochhaas": ram_lochhaas,
-        "rotation": rotation,
     }
     diagnostics = {
+        "rotation_smoothed": rotation_smoothed,
         "radial_inertia": radial_inertia,
         "gravity_magnitude": gravity_magnitude,
         "turbulent_pressure": turbulent_pressure,
         "ram_pressure_lochhaas": ram_pressure,
+        "specific_angular_momentum_x": jx,
+        "specific_angular_momentum_y": jy,
+        "specific_angular_momentum_z": jz,
     }
 
     return support_terms, diagnostics, sigma_cells
@@ -522,7 +556,7 @@ def shell_mass_weighted_profiles(
     radial_bins,
     base_mask=None,
 ):
-    """Mass-weight local accelerations and convert them into support profiles."""
+    """Mass-weight local accelerations and compute shell-coherent rotation."""
 
     radius_pc = radius.in_units("pc").value
     density_cgs = density.in_units("g/cm**3").value
@@ -532,10 +566,18 @@ def shell_mass_weighted_profiles(
     if base_mask is None:
         base_mask = np.ones_like(radius_pc, dtype=bool)
 
-    keys = list(acceleration_terms) + ["radial_inertia", "gravity_magnitude"]
+    local_keys = list(acceleration_terms) + [
+        "rotation_smoothed",
+        "radial_inertia",
+        "gravity_magnitude",
+    ]
     all_terms = dict(acceleration_terms)
+    all_terms["rotation_smoothed"] = diagnostics["rotation_smoothed"]
     all_terms["radial_inertia"] = diagnostics["radial_inertia"]
     all_terms["gravity_magnitude"] = diagnostics["gravity_magnitude"]
+    jx = diagnostics["specific_angular_momentum_x"].in_units("cm**2/s").value
+    jy = diagnostics["specific_angular_momentum_y"].in_units("cm**2/s").value
+    jz = diagnostics["specific_angular_momentum_z"].in_units("cm**2/s").value
 
     profiles = {
         "r_pc": np.sqrt(radial_bins[:-1] * radial_bins[1:]).in_units("pc").value,
@@ -545,8 +587,13 @@ def shell_mass_weighted_profiles(
         "cell_count": np.zeros(len(radial_bins) - 1, dtype=int),
     }
 
-    for key in keys:
+    for key in local_keys + ["rotation"]:
         profiles[f"a_{key}_cm_s2"] = np.full(len(radial_bins) - 1, np.nan)
+    for axis in ["x", "y", "z", "magnitude"]:
+        profiles[f"specific_angular_momentum_{axis}_cm2_s"] = np.full(
+            len(radial_bins) - 1,
+            np.nan,
+        )
 
     for i in range(len(radial_bins) - 1):
         shell_mask = (
@@ -572,11 +619,32 @@ def shell_mass_weighted_profiles(
                 np.sum(cell_mass[valid] * accel[valid]) / np.sum(cell_mass[valid])
             )
 
+        valid_j = (
+            shell_mask
+            & np.isfinite(jx)
+            & np.isfinite(jy)
+            & np.isfinite(jz)
+        )
+        if np.any(valid_j):
+            mass_j = cell_mass[valid_j]
+            jx_shell = np.sum(mass_j * jx[valid_j]) / np.sum(mass_j)
+            jy_shell = np.sum(mass_j * jy[valid_j]) / np.sum(mass_j)
+            jz_shell = np.sum(mass_j * jz[valid_j]) / np.sum(mass_j)
+            j_mag = np.sqrt(jx_shell**2 + jy_shell**2 + jz_shell**2)
+            r_shell_cm = (profiles["r_pc"][i] * u.pc).in_units("cm").value
+
+            profiles["specific_angular_momentum_x_cm2_s"][i] = jx_shell
+            profiles["specific_angular_momentum_y_cm2_s"][i] = jy_shell
+            profiles["specific_angular_momentum_z_cm2_s"][i] = jz_shell
+            profiles["specific_angular_momentum_magnitude_cm2_s"][i] = j_mag
+            profiles["a_rotation_cm_s2"][i] = j_mag**2 / r_shell_cm**3
+
     gravity = profiles["a_gravity_magnitude_cm_s2"]
     support_valid = np.isfinite(gravity) & (gravity > 0)
     total_support = np.zeros_like(gravity)
+    support_keys = list(acceleration_terms) + ["rotation"]
 
-    for key in acceleration_terms:
+    for key in support_keys:
         accel = profiles[f"a_{key}_cm_s2"]
         profiles[f"support_{key}"] = np.divide(
             accel,
@@ -592,7 +660,7 @@ def shell_mass_weighted_profiles(
 
     total_support[~support_valid] = np.nan
     profiles["support_total_non_gravity"] = total_support
-    no_ram_keys = [key for key in acceleration_terms if key != "ram_lochhaas"]
+    no_ram_keys = [key for key in support_keys if key != "ram_lochhaas"]
     total_support_no_ram = np.zeros_like(gravity)
 
     for key in no_ram_keys:
@@ -604,6 +672,12 @@ def shell_mass_weighted_profiles(
 
     total_support_no_ram[~support_valid] = np.nan
     profiles["support_total_non_gravity_no_ram"] = total_support_no_ram
+    profiles["support_rotation_smoothed"] = np.divide(
+        profiles["a_rotation_smoothed_cm_s2"],
+        gravity,
+        out=np.full_like(gravity, np.nan, dtype=float),
+        where=support_valid,
+    )
     profiles["support_radial_inertia"] = np.divide(
         profiles["a_radial_inertia_cm_s2"],
         gravity,
@@ -956,11 +1030,19 @@ def main():
         "snapshot": args.snapshot,
         "density_max_g_cm3": args.density_max,
         "temperature_min_K": args.temperature_min,
-        "ram_definition": "rho_smooth * (dvr_smooth_dr * dx)^2",
+        "ram_definition": (
+            "convert Cartesian velocity to spherical vr on the uniform grid, "
+            "Gaussian smooth vr, then use rho_smooth * (dvr_smooth_dr * dx)^2"
+        ),
         "rotation_definition": (
-            "convert Cartesian velocity to spherical vtheta/vphi on the "
-            "uniform grid, Gaussian smooth those angular velocity fields, "
-            "then compute (vtheta_sm^2 + vphi_sm^2) / r with no radial gradient"
+            "main support_rotation is coherent shell rotation: mass-weight "
+            "specific angular momentum vector r cross v in each shell, then "
+            "compute |<j>|^2 / r_shell^3"
+        ),
+        "rotation_smoothed_definition": (
+            "diagnostic only: convert Cartesian velocity to spherical "
+            "vtheta/vphi, Gaussian smooth those angular velocity fields, "
+            "then compute (vtheta_sm^2 + vphi_sm^2) / r"
         ),
         "averaging": "sum(cell_mass * acceleration) / sum(cell_mass)",
     }
