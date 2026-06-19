@@ -176,6 +176,14 @@ radiusList = enclosed_mass["R (pc)"].values
 massList = enclosed_mass["Total_mass (Msun)"].values
 
 
+def enclosed_mass_at_radius(radius):
+    """Interpolate the total M87 enclosed mass table at radius."""
+
+    radius_pc = radius.in_units("pc").value
+    mass_msun = np.interp(radius_pc, radiusList, massList)
+    return mass_msun * u.Msun
+
+
 def K_to_keV(temperature):
     return temperature * boltzmannConstCGS / 1.60218e-9
 
@@ -506,7 +514,10 @@ def _cooling_ratio(field, data):
     name="keplerian_speed", sampling_type="cell", units="Mpc/Myr", force_override=True
 )
 def _keplerian_speed(field, data):
-    return np.sqrt(phc.G * SMBHMass / data["index", "radius"])
+    enclosed_mass_total = enclosed_mass_at_radius(data["index", "radius"])
+    return np.sqrt(phc.G * enclosed_mass_total / data["index", "radius"]).in_units(
+        "Mpc/Myr"
+    )
 
 
 @derived_field(
@@ -794,3 +805,187 @@ def _r_x(field, data):
 @derived_field(name="r_y", sampling_type="cell", units="pc", force_override=True)
 def _r_y(field, data):
     return np.sqrt(data["index", "z"] ** 2 + data["index", "x"] ** 2)
+
+
+XRISM_BAND_KEV = (0.3, 12.0)
+BROAD_XRAY_BAND_KEV = (0.1, 100.0)
+
+
+def _xray_band_suffix(emin_keV, emax_keV):
+    return f"{emin_keV:.1f}_{emax_keV:.1f}_keV"
+
+
+def _as_yt_quantity(ds, value, default_unit):
+    if hasattr(value, "to"):
+        return value
+
+    if isinstance(value, tuple):
+        return ds.quan(value[0], value[1])
+
+    return ds.quan(value, default_unit)
+
+
+def add_xray_fields(
+    ds,
+    emin_keV=XRISM_BAND_KEV[0],
+    emax_keV=XRISM_BAND_KEV[1],
+    metallicity=1.0,
+    dist=(16.4, "Mpc"),
+    table_type="apec",
+):
+    """Add yt X-ray emissivity/luminosity fields for a requested energy band."""
+
+    suffix = _xray_band_suffix(emin_keV, emax_keV)
+    emissivity_field = ("gas", f"xray_emissivity_{suffix}")
+    luminosity_field = ("gas", f"xray_luminosity_{suffix}")
+
+    if (
+        emissivity_field not in ds.field_list
+        and emissivity_field not in ds.derived_field_list
+    ):
+        yt.fields.xray_emission_fields.add_xray_emissivity_field(
+            ds,
+            emin_keV,
+            emax_keV,
+            metallicity=metallicity,
+            dist=dist,
+            table_type=table_type,
+        )
+
+    return emissivity_field, luminosity_field
+
+
+def add_xrism_xray_fields(
+    ds,
+    metallicity=1.0,
+    dist=(16.4, "Mpc"),
+    table_type="apec",
+):
+    """Add yt X-ray fields for the XRISM 0.3-12 keV band."""
+
+    return add_xray_fields(
+        ds,
+        emin_keV=XRISM_BAND_KEV[0],
+        emax_keV=XRISM_BAND_KEV[1],
+        metallicity=metallicity,
+        dist=dist,
+        table_type=table_type,
+    )
+
+
+def total_xray_luminosity(
+    ds,
+    r_min=(100.0, "pc"),
+    r_max=(50.0, "kpc"),
+    emin_keV=XRISM_BAND_KEV[0],
+    emax_keV=XRISM_BAND_KEV[1],
+    metallicity=1.0,
+    dist=(16.4, "Mpc"),
+    table_type="apec",
+):
+    """Calculate total X-ray luminosity in a band between two spherical radii.
+
+    Returns:
+        unyt_quantity: Integrated X-ray luminosity in erg/s.
+    """
+
+    emissivity_field, luminosity_field = add_xray_fields(
+        ds,
+        emin_keV=emin_keV,
+        emax_keV=emax_keV,
+        metallicity=metallicity,
+        dist=dist,
+        table_type=table_type,
+    )
+
+    r_min_q = _as_yt_quantity(ds, r_min, "pc")
+    r_max_q = _as_yt_quantity(ds, r_max, "kpc")
+    r_min_pc = r_min_q.to("pc").value
+    shell = ds.sphere("c", r_max_q).cut_region(
+        [f"obj['radius'].in_units('pc') >= {r_min_pc}"]
+    )
+
+    if (
+        luminosity_field in ds.field_list
+        or luminosity_field in ds.derived_field_list
+    ):
+        luminosity = shell.quantities.total_quantity(luminosity_field)
+    else:
+        luminosity = (shell[emissivity_field] * shell[("index", "cell_volume")]).sum()
+
+    return luminosity.to("erg/s")
+
+
+def total_xrism_xray_luminosity(
+    ds,
+    r_min=(100.0, "pc"),
+    r_max=(50.0, "kpc"),
+    metallicity=1.0,
+    dist=(16.4, "Mpc"),
+    table_type="apec",
+):
+    """Calculate total 0.3-12 keV X-ray luminosity between two spherical radii."""
+
+    return total_xray_luminosity(
+        ds,
+        r_min=r_min,
+        r_max=r_max,
+        emin_keV=XRISM_BAND_KEV[0],
+        emax_keV=XRISM_BAND_KEV[1],
+        metallicity=metallicity,
+        dist=dist,
+        table_type=table_type,
+    )
+
+
+def load_jet_power_history(
+    path,
+    hst_filename="M87.hst",
+    time_column=0,
+    jet_power_column=12,
+):
+    """Load jet power history from an Athena++ history file.
+
+    The notebook convention is column 0 for code time and column 12 for jet
+    power in erg/s.
+    """
+
+    history = pd.read_csv(os.path.join(path, hst_filename), sep=r"\s+", header=None)
+    jet_time = history[time_column].to_numpy() * code_time * u.Myr
+    jet_power = history[jet_power_column].to_numpy() * u.erg / u.s
+
+    return jet_time, jet_power
+
+
+def instantaneous_jet_power(
+    path,
+    ds=None,
+    time=None,
+    hst_filename="M87.hst",
+    time_column=0,
+    jet_power_column=12,
+):
+    """Return the nearest history-file jet power to a dataset or supplied time."""
+
+    if ds is None and time is None:
+        raise ValueError("Provide either ds or time.")
+
+    jet_time, jet_power = load_jet_power_history(
+        path,
+        hst_filename=hst_filename,
+        time_column=time_column,
+        jet_power_column=jet_power_column,
+    )
+
+    if time is None:
+        target_time = ds.current_time.to("Myr")
+    elif hasattr(time, "to"):
+        target_time = time.to("Myr")
+    elif isinstance(time, tuple):
+        target_time = yt.YTQuantity(time[0], time[1]).to("Myr")
+    else:
+        target_time = yt.YTQuantity(time, "Myr")
+
+    idx = np.argmin(np.abs((jet_time - target_time).to("Myr").value))
+
+    return jet_power[idx].to("erg/s"), jet_time[idx].to("Myr"), idx
