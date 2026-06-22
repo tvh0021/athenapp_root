@@ -174,6 +174,12 @@ r_g = phc.G * SMBHMass / phc.c**2
 enclosed_mass = pd.read_csv(cwd + "/enclosed_mass_M87.csv")
 radiusList = enclosed_mass["R (pc)"].values
 massList = enclosed_mass["Total_mass (Msun)"].values
+_circularization_j2_table = (
+    phc.G * (massList * u.Msun) * (radiusList * u.pc)
+).in_units("pc**4/Myr**2").value
+_circularization_inner_gm = (phc.G * massList[0] * u.Msun).in_units(
+    "pc**3/Myr**2"
+).value
 
 
 def enclosed_mass_at_radius(radius):
@@ -182,6 +188,19 @@ def enclosed_mass_at_radius(radius):
     radius_pc = radius.in_units("pc").value
     mass_msun = np.interp(radius_pc, radiusList, massList)
     return mass_msun * u.Msun
+
+
+def circularization_radius_from_specific_angular_momentum(specific_angular_momentum):
+    """Invert j_circ^2 = G M_enc(r_circ) r_circ using the M87 mass table."""
+
+    j2 = (specific_angular_momentum**2).in_units("pc**4/Myr**2").value
+    r_circ_pc = np.interp(j2, _circularization_j2_table, radiusList)
+    r_circ_pc = np.where(
+        j2 < _circularization_j2_table[0],
+        j2 / _circularization_inner_gm,
+        r_circ_pc,
+    )
+    return r_circ_pc * u.pc
 
 
 def K_to_keV(temperature):
@@ -779,7 +798,10 @@ def _bondi_accretion_rate(field, data):
     name="circularization_radius", sampling_type="cell", units="pc", force_override=True
 )
 def _circularization_radius(field, data):
-    return (data["radius"] * data["vtangent"]) ** 2 / (phc.G * SMBHMass)
+    specific_angular_momentum = data["radius"] * data["vtangent"]
+    return circularization_radius_from_specific_angular_momentum(
+        specific_angular_momentum
+    )
 
 
 @derived_field(
